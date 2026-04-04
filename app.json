@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "简校园",
+    "slug": "SimpleUniversity",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIDesignRequiresCompatibility": false,
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "io.github.xiguac.simpleuniversity"
+    },
+    "android": {
+      "package": "io.github.xiguac.simpleuniversity",
+      "adaptiveIcon": {
+        "foregroundImage": "./icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./icon.png"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c3ff43ba-9bd6-43b7-adc3-a185f5c6b959"
+      }
+    }
+  }
+}
