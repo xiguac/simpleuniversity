@@ -24,7 +24,7 @@ const ActivityOverlayContext = createContext(null);
 const { width: screenWidth } = Dimensions.get('window');
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 const EXPAND_DURATION = 320;
-const COLLAPSE_DURATION = 280;
+const COLLAPSE_DURATION = 340;
 const DRAG_CLOSE_DISTANCE = 260;
 
 function UniversalImage({ uri, style }) {
@@ -40,6 +40,16 @@ function buildTargetLayout(insets, topOffset = 0) {
     y: insets.top + topOffset + 16,
     width: screenWidth - 40,
     height: 124,
+  };
+}
+
+function buildTargetTextLayout(targetLayout) {
+  const contentX = targetLayout.x + 12 + 100 + 15;
+  const contentWidth = targetLayout.width - (12 + 100 + 15 + 12);
+  return {
+    title: { x: contentX, y: targetLayout.y + 14, fontSize: 16, width: contentWidth },
+    credit: { x: contentX, y: targetLayout.y + 62, fontSize: 12 },
+    count: { x: contentX, y: targetLayout.y + 90, fontSize: 11 },
   };
 }
 
@@ -87,19 +97,68 @@ function ActivityOverlay({ state, progress, onClose, onJoin }) {
   const cardHeight = progress.interpolate({ inputRange: [0, 1], outputRange: [state.sourceLayout.height, targetLayout.height] });
   const radius = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [state.variant === 'compact' ? 20 : 22, 22],
+    outputRange: [state.variant === 'compact' ? 15 : 22, 22],
   });
   const backdropOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
   const pageOpacity = progress.interpolate({ inputRange: [0, 0.18, 1], outputRange: [0, 0.72, 1] });
   const detailOpacity = progress.interpolate({ inputRange: [0, 0.42, 1], outputRange: [0, 0.18, 1] });
   const detailTranslateY = progress.interpolate({ inputRange: [0, 1], outputRange: [18, 0] });
   const closeOpacity = progress.interpolate({ inputRange: [0.45, 1], outputRange: [0, 1] });
+  const contentOpacity = state.sourceTextLayouts
+    ? progress.interpolate({ inputRange: [0, 0.82, 1], outputRange: [0, 0.2, 1] })
+    : progress.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] });
+  const contentTranslateY = progress.interpolate({ inputRange: [0, 1], outputRange: [2, 0] });
+  const isClosing = !!state.closing;
+  const targetTextLayout = buildTargetTextLayout(targetLayout);
+  const sourceContentWidth = Math.max(10, (state.sourceLayout?.width || 0) - (12 + 100 + 15 + 12));
 
   const baseInfo = state.detail?.baseInfo || state.item;
   const userStatus = state.detail?.userStatus;
   const isJoined = userStatus?.hasJoin === 1;
   const isFull = state.detail ? state.detail.baseInfo.joinUserCount >= state.detail.baseInfo.allowUserCount : false;
   const isEnded = state.detail?.baseInfo?.statusName === '已结束';
+
+  const renderSharedText = (key, text, color, weight = '700') => {
+    const source = state.sourceTextLayouts?.[key];
+    const target = targetTextLayout[key];
+    if (!source || !target || text == null) {
+      return null;
+    }
+
+    const left = progress.interpolate({ inputRange: [0, 1], outputRange: [source.x, target.x] });
+    const top = progress.interpolate({ inputRange: [0, 1], outputRange: [source.y, target.y] });
+    const fontSize = progress.interpolate({ inputRange: [0, 1], outputRange: [source.fontSize || target.fontSize, target.fontSize] });
+    const opacity = progress.interpolate({ inputRange: [0, 0.82, 1], outputRange: [1, 0.92, 0] });
+    const width =
+      key === 'title'
+        ? progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [sourceContentWidth, Math.max(10, target.width || sourceContentWidth)],
+          })
+        : undefined;
+
+    return (
+      <Animated.Text
+        key={`shared-${key}`}
+        numberOfLines={key === 'title' ? 2 : 1}
+        style={[
+          styles.sharedText,
+          {
+            left,
+            top,
+            width,
+            opacity,
+            fontSize,
+            color,
+            fontWeight: weight,
+            lineHeight: key === 'title' ? 22 : undefined,
+          },
+        ]}
+      >
+        {text}
+      </Animated.Text>
+    );
+  };
 
   const renderParticipants = (detailBaseInfo) => {
     let typeLabel = '参与对象';
@@ -130,7 +189,7 @@ function ActivityOverlay({ state, progress, onClose, onJoin }) {
   };
 
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+    <View pointerEvents={isClosing ? "none" : "box-none"} style={StyleSheet.absoluteFill}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
         <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
       </Pressable>
@@ -151,14 +210,23 @@ function ActivityOverlay({ state, progress, onClose, onJoin }) {
         {...panResponder.panHandlers}
       >
         <UniversalImage uri={baseInfo.logo} style={styles.overlayImage} />
-        <View style={styles.overlayCardContent}>
-          <Text style={styles.overlayTitle} numberOfLines={state.variant === 'compact' ? 1 : 2}>{baseInfo.name}</Text>
+        <Animated.View style={[styles.overlayCardContent, { opacity: contentOpacity, transform: [{ translateY: contentTranslateY }] }]}> 
+          <Text style={styles.overlayTitle} numberOfLines={2}>{baseInfo.name}</Text>
           <Text style={styles.overlayCredit}>+{baseInfo.credit} 学分</Text>
           <Text style={styles.overlayCount}>已报 {baseInfo.joinUserCount || 0}/{baseInfo.allowUserCount || 0}</Text>
-        </View>
+        </Animated.View>
       </Animated.View>
 
-      <Animated.View pointerEvents="box-none" style={[styles.detailLayer, { opacity: detailOpacity, transform: [{ translateY: detailTranslateY }] }]}>
+      
+      {state.sourceTextLayouts ? (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          {renderSharedText('title', baseInfo.name, '#2c3e50', '700')}
+          {renderSharedText('credit', '+' + baseInfo.credit + ' 学分', '#e67e22', '700')}
+          {renderSharedText('count', '已报 ' + (baseInfo.joinUserCount || 0) + '/' + (baseInfo.allowUserCount || 0), '#95a5a6', '500')}
+        </View>
+      ) : null}
+
+      <Animated.View pointerEvents={isClosing ? "none" : "box-none"} style={[styles.detailLayer, { opacity: detailOpacity, transform: [{ translateY: detailTranslateY }] }]}>
         <View style={[styles.detailTopBar, { top: insets.top + extraTopOffset + 6 }]}>
           <Animated.View style={{ opacity: closeOpacity }}>
             <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.85}>
@@ -242,6 +310,8 @@ export function ActivityOverlayProvider({ children }) {
     loading: false,
     joining: false,
     topOffset: 0,
+    closing: false,
+    sourceTextLayouts: null,
   });
   const [returnState, setReturnState] = useState({
     active: false,
@@ -294,6 +364,8 @@ export function ActivityOverlayProvider({ children }) {
       loading: true,
       joining: false,
       topOffset,
+      closing: false,
+      sourceTextLayouts: options.sourceTextLayouts ?? null,
     });
     fetchDetail(item.id);
     Animated.spring(progress, {
@@ -307,6 +379,10 @@ export function ActivityOverlayProvider({ children }) {
   }, [fetchDetail, progress, returnProgress]);
 
   const closeActivity = useCallback(() => {
+    if (!state.visible || state.closing) {
+      return;
+    }
+
     const closingId = state.activityId;
     const closingHeight = state.sourceLayout?.height ?? 0;
 
@@ -318,6 +394,7 @@ export function ActivityOverlayProvider({ children }) {
       activityId: closingId,
       height: closingHeight,
     });
+    setState((current) => ({ ...current, closing: true }));
 
     Animated.parallel([
       Animated.timing(progress, {
@@ -326,12 +403,10 @@ export function ActivityOverlayProvider({ children }) {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: false,
       }),
-      Animated.spring(returnProgress, {
+      Animated.timing(returnProgress, {
         toValue: 1,
-        damping: 15,
-        stiffness: 160,
-        mass: 0.9,
-        overshootClamping: false,
+        duration: COLLAPSE_DURATION + 40,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
     ]).start(() => {
@@ -345,12 +420,14 @@ export function ActivityOverlayProvider({ children }) {
     loading: false,
     joining: false,
     topOffset: 0,
+    closing: false,
+    sourceTextLayouts: null,
   });
       setReturnState({ active: false, activityId: null, height: 0 });
       progress.setValue(0);
       returnProgress.setValue(0);
     });
-  }, [progress, returnProgress, state.activityId, state.sourceLayout]);
+  }, [progress, returnProgress, state.activityId, state.closing, state.sourceLayout, state.visible]);
 
   const joinActivity = useCallback(async () => {
     setState((current) => ({ ...current, joining: true }));
@@ -400,12 +477,12 @@ export function ActivityOverlayProvider({ children }) {
       openActivity,
       closeActivity,
       activeActivityId: state.activityId,
-      isActivityOpen: state.visible,
+      isActivityOpen: state.visible && !state.closing,
       returningActivityId: returnState.active ? returnState.activityId : null,
       activityReturnHeight: returnState.height,
       activityReturnProgress: returnProgress,
     }),
-    [openActivity, closeActivity, returnProgress, returnState.active, returnState.activityId, returnState.height, state.activityId, state.visible]
+    [openActivity, closeActivity, returnProgress, returnState.active, returnState.activityId, returnState.height, state.activityId, state.closing, state.visible]
   );
 
   return (
@@ -438,8 +515,9 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   overlayImage: { width: 100, height: 100, borderRadius: 15, backgroundColor: '#eef3f1' },
+  sharedText: { position: 'absolute', includeFontPadding: false },
   overlayCardContent: { flex: 1, marginLeft: 15, justifyContent: 'space-between' },
-  overlayTitle: { fontSize: 16, fontWeight: '700', color: '#2c3e50' },
+  overlayTitle: { fontSize: 16, lineHeight: 22, minHeight: 44, fontWeight: '700', color: '#2c3e50' },
   overlayCredit: { fontSize: 12, fontWeight: '700', color: '#e67e22' },
   overlayCount: { fontSize: 11, color: '#95a5a6' },
   detailLayer: { ...StyleSheet.absoluteFillObject },
@@ -460,8 +538,4 @@ const styles = StyleSheet.create({
   joinBtnDisabled: { backgroundColor: '#bdc3c7' },
   joinBtnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
 });
-
-
-
-
 

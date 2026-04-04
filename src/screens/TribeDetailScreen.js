@@ -21,6 +21,10 @@ import { useActivityOverlay } from '../context/ActivityOverlayContext';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
+function normalizeId(value) {
+  return `${value ?? ''}`;
+}
+
 const UniversalImage = ({ uri, style, radius = 10 }) => {
   if (Platform.OS === 'web') {
     return <img src={uri} style={{ ...style, borderRadius: radius, objectFit: 'cover' }} referrerPolicy="no-referrer" alt="img" />;
@@ -38,24 +42,55 @@ function measureRef(ref) {
   });
 }
 
-function TribeEventCard({ item, hidden, onOpen }) {
+function TribeEventCard({ item, hidden, onOpen, translateY }) {
   const cardRef = useRef(null);
+  const titleRef = useRef(null);
+  const creditRef = useRef(null);
+  const countRef = useRef(null);
 
   const handlePress = async () => {
-    const layout = await measureRef(cardRef);
+    const [layout, titleLayout, creditLayout, countLayout] = await Promise.all([
+      measureRef(cardRef),
+      measureRef(titleRef),
+      measureRef(creditRef),
+      measureRef(countRef),
+    ]);
     if (layout) {
-      onOpen(item, layout, 'compact');
+      const sourceTextLayouts = {
+        title: titleLayout ? { ...titleLayout, fontSize: 16 } : null,
+        credit: creditLayout ? { ...creditLayout, fontSize: 12 } : null,
+        count: countLayout ? { ...countLayout, fontSize: 11 } : null,
+      };
+      onOpen(item, layout, 'default', { sourceTextLayouts });
     }
   };
 
   return (
-    <Animated.View ref={cardRef} collapsable={false} style={[styles.eventWrap, hidden && styles.hiddenCard]}>
+    <Animated.View
+      ref={cardRef}
+      collapsable={false}
+      style={[styles.eventWrap, hidden && styles.hiddenCard, translateY ? { transform: [{ translateY }] } : null]}
+    >
       <Pressable style={styles.eventCard} onPress={handlePress}>
-        <UniversalImage uri={item.logo} style={styles.eventLogo} />
+        <UniversalImage uri={item.logo} style={styles.eventLogo} radius={15} />
         <View style={styles.eventInfo}>
-          <Text style={styles.eventTitle} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.eventTime}>{item.startTime}</Text>
-          <Text style={styles.eventCredit}>+{item.credit} 学分</Text>
+          <Text ref={titleRef} style={styles.eventTitle} numberOfLines={2}>{item.name}</Text>
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Ionicons name="time-outline" size={14} color="#95a5a6" />
+              <Text style={styles.eventTime}>{item.startTime?.substring(5, 16)}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Ionicons name="ribbon-outline" size={14} color="#e67e22" />
+              <Text ref={creditRef} style={styles.eventCredit}>+{item.credit} 学分</Text>
+            </View>
+          </View>
+          <View style={styles.cardFooter}>
+            <View style={styles.statusTag}>
+              <Text style={styles.statusText}>{item.statusName || '进行中'}</Text>
+            </View>
+            <Text ref={countRef} style={styles.countText}>已报 {item.joinUserCount || 0}/{item.allowUserCount || 0}</Text>
+          </View>
         </View>
       </Pressable>
     </Animated.View>
@@ -77,6 +112,8 @@ export default function TribeDetailScreen({ route }) {
     closeActivity,
     activeActivityId,
     returningActivityId,
+    activityReturnHeight,
+    activityReturnProgress,
     isActivityOpen,
   } = useActivityOverlay();
 
@@ -154,7 +191,29 @@ export default function TribeDetailScreen({ route }) {
     return <View style={styles.center}><ActivityIndicator color="#2ecc71" /></View>;
   }
 
-  const isSameActivityId = (a, b) => `${a}` === `${b}`;
+  const buildReturnShift = (index, list) => {
+    if (!returningActivityId || !activityReturnProgress) {
+      return null;
+    }
+
+    const targetId = normalizeId(returningActivityId);
+    const targetIndex = list.findIndex((entry) => normalizeId(entry?.id) === targetId);
+    if (targetIndex === -1 || index === targetIndex || Math.abs(index - targetIndex) > 2) {
+      return null;
+    }
+
+    const direction = index < targetIndex ? -1 : 1;
+    const distance = Math.max(activityReturnHeight - 18, 0);
+    const damp = Math.abs(index - targetIndex) === 2 ? 0.56 : 1;
+
+    return activityReturnProgress.interpolate({
+      inputRange: [0, 0.58, 0.82, 1],
+      outputRange: [0, direction * distance * 0.54 * damp, direction * distance * 0.2 * damp, 0],
+    });
+  };
+
+  const hiddenActivityId = normalizeId(activeActivityId);
+  const returningTargetId = normalizeId(returningActivityId);
 
   return (
     <View style={styles.container}>
@@ -173,11 +232,12 @@ export default function TribeDetailScreen({ route }) {
             <Text style={styles.sectionTitle}>部落活动</Text>
           </>
         )}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <TribeEventCard
             item={item}
-            hidden={isSameActivityId(activeActivityId, item.id)}
-            onOpen={(entry, layout, variant) => openActivity(entry, layout, variant, { topOffset: headerOffset })}
+            hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
+            translateY={buildReturnShift(index, events)}
+            onOpen={(entry, layout, variant, options = {}) => openActivity(entry, layout, variant, { topOffset: headerOffset, ...options })}
           />
         )}
       />
@@ -194,12 +254,26 @@ const styles = StyleSheet.create({
   name: { fontSize: 22, fontWeight: 'bold', marginTop: 15 },
   typeTag: { backgroundColor: '#e8f8f0', color: '#2ecc71', padding: 6, borderRadius: 8, marginTop: 10, fontSize: 12, fontWeight: 'bold' },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginVertical: 15 },
-  eventWrap: { marginBottom: 15 },
+  eventWrap: { marginBottom: 15, backgroundColor: 'white', borderRadius: 22 },
   hiddenCard: { opacity: 0 },
-  eventCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 15, padding: 12, borderWidth: 1, borderColor: '#f1f2f6' },
-  eventLogo: { width: 70, height: 70, borderRadius: 10 },
-  eventInfo: { flex: 1, marginLeft: 15, justifyContent: 'space-around' },
-  eventTitle: { fontSize: 15, fontWeight: 'bold', color: '#2c3e50' },
-  eventTime: { fontSize: 11, color: '#95a5a6' },
-  eventCredit: { fontSize: 13, color: '#e67e22', fontWeight: 'bold' },
+  eventCard: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#f1f2f6',
+    elevation: 2,
+  },
+  eventLogo: { width: 100, height: 100 },
+  eventInfo: { flex: 1, marginLeft: 15, justifyContent: 'space-between' },
+  eventTitle: { fontSize: 16, fontWeight: '700', color: '#2c3e50' },
+  infoGrid: { marginTop: 8 },
+  infoItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  eventTime: { color: '#7f8c8d', marginLeft: 6, fontSize: 12 },
+  eventCredit: { color: '#e67e22', marginLeft: 6, fontSize: 12, fontWeight: 'bold' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statusTag: { backgroundColor: '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusText: { fontSize: 11, color: '#95a5a6' },
+  countText: { fontSize: 11, color: '#95a5a6' },
 });

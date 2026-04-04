@@ -7,7 +7,6 @@ import {
   Image,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,7 +21,10 @@ import { useAuth } from '../context/AuthContext';
 import { useActivityOverlay } from '../context/ActivityOverlayContext';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
-const CARD_HEIGHT = 127;
+
+function normalizeId(value) {
+  return `${value ?? ''}`;
+}
 
 const UniversalImage = ({ uri, style }) => {
   if (Platform.OS === 'web') {
@@ -43,11 +45,24 @@ function measureRef(ref) {
 
 const ActivityCard = memo(function ActivityCard({ item, hidden, onOpen, translateY }) {
   const cardRef = useRef(null);
+  const titleRef = useRef(null);
+  const creditRef = useRef(null);
+  const countRef = useRef(null);
 
   const handlePress = async () => {
-    const layout = await measureRef(cardRef);
+    const [layout, titleLayout, creditLayout, countLayout] = await Promise.all([
+      measureRef(cardRef),
+      measureRef(titleRef),
+      measureRef(creditRef),
+      measureRef(countRef),
+    ]);
     if (layout) {
-      onOpen(item, layout, 'default');
+      const sourceTextLayouts = {
+        title: titleLayout ? { ...titleLayout, fontSize: 16 } : null,
+        credit: creditLayout ? { ...creditLayout, fontSize: 12 } : null,
+        count: countLayout ? { ...countLayout, fontSize: 11 } : null,
+      };
+      onOpen(item, layout, 'default', { sourceTextLayouts });
     }
   };
 
@@ -64,7 +79,7 @@ const ActivityCard = memo(function ActivityCard({ item, hidden, onOpen, translat
       <Pressable style={styles.activityCard} onPress={handlePress}>
         <UniversalImage uri={item.logo} style={styles.activityLogo} />
         <View style={styles.cardContent}>
-          <Text style={styles.activityTitle} numberOfLines={2}>
+          <Text ref={titleRef} style={styles.activityTitle} numberOfLines={2}>
             {item.name}
           </Text>
 
@@ -75,7 +90,7 @@ const ActivityCard = memo(function ActivityCard({ item, hidden, onOpen, translat
             </View>
             <View style={styles.infoItem}>
               <Ionicons name="ribbon-outline" size={14} color="#e67e22" />
-              <Text style={[styles.infoText, styles.creditText]}>+{item.credit} 学分</Text>
+              <Text ref={creditRef} style={[styles.infoText, styles.creditText]}>+{item.credit} 学分</Text>
             </View>
           </View>
 
@@ -83,7 +98,7 @@ const ActivityCard = memo(function ActivityCard({ item, hidden, onOpen, translat
             <View style={styles.statusTag}>
               <Text style={styles.statusText}>{item.statusName}</Text>
             </View>
-            <Text style={styles.countText}>已报 {item.joinUserCount}/{item.allowUserCount}</Text>
+            <Text ref={countRef} style={styles.countText}>已报 {item.joinUserCount}/{item.allowUserCount}</Text>
           </View>
         </View>
       </Pressable>
@@ -115,6 +130,8 @@ export default function ActivityScreen({ navigation }) {
   const [activityResults, setActivityResults] = useState([]);
   const [tribeResults, setTribeResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const refreshingRef = useRef(false);
+  const loadingMoreRef = useRef(false);
   const { authFetchJson } = useAuth();
   const {
     openActivity,
@@ -126,7 +143,18 @@ export default function ActivityScreen({ navigation }) {
   } = useActivityOverlay();
 
   const fetchActivities = async (pageNum, isRefresh = false) => {
-    if (loading) return;
+    if (isRefresh) {
+      if (refreshingRef.current) {
+        return;
+      }
+      refreshingRef.current = true;
+      setRefreshing(true);
+    } else {
+      if (loadingMoreRef.current || refreshingRef.current) {
+        return;
+      }
+      loadingMoreRef.current = true;
+    }
 
     setLoading(true);
     try {
@@ -138,7 +166,7 @@ export default function ActivityScreen({ navigation }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}:${baseUserInfo.sid}`,
         },
-        body: JSON.stringify({ sort: 0, page: pageNum, limit: 10, puType: 0, status: 1 }),
+        body: JSON.stringify({ sort: 0, page: pageNum, limit: 10, puType: 0 }),
       });
 
       if (resJson.code === 0 && resJson.data?.list) {
@@ -157,8 +185,13 @@ export default function ActivityScreen({ navigation }) {
         console.error(error);
       }
     } finally {
+      if (isRefresh) {
+        refreshingRef.current = false;
+        setRefreshing(false);
+      } else {
+        loadingMoreRef.current = false;
+      }
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
@@ -218,7 +251,8 @@ export default function ActivityScreen({ navigation }) {
       return null;
     }
 
-    const targetIndex = list.findIndex((entry) => entry.id === returningActivityId);
+    const targetId = normalizeId(returningActivityId);
+    const targetIndex = list.findIndex((entry) => normalizeId(entry?.id) === targetId);
     if (targetIndex === -1 || index === targetIndex || Math.abs(index - targetIndex) > 2) {
       return null;
     }
@@ -234,6 +268,8 @@ export default function ActivityScreen({ navigation }) {
   };
 
   const isSearchingMode = submittedQuery.length > 0;
+  const hiddenActivityId = normalizeId(activeActivityId);
+  const returningTargetId = normalizeId(returningActivityId);
 
   const header = (
     <View style={styles.headerBlock}>
@@ -284,7 +320,7 @@ export default function ActivityScreen({ navigation }) {
             <ActivityCard
               key={`activity-${item.id}`}
               item={item}
-              hidden={activeActivityId === item.id}
+              hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
               translateY={buildReturnShift(item.id, index, activityResults)}
               onOpen={openActivity}
             />
@@ -305,11 +341,11 @@ export default function ActivityScreen({ navigation }) {
       <FlatList
         data={activities}
         extraData={`${activeActivityId ?? ''}-${returningActivityId ?? ''}-${isActivityOpen}`}
-        keyExtractor={(item, index) => `${item.id}-${index}`}
+        keyExtractor={(item) => String(item.id)}
         renderItem={({ item, index }) => (
           <ActivityCard
             item={item}
-            hidden={activeActivityId === item.id}
+            hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
             translateY={buildReturnShift(item.id, index, activities)}
             onOpen={openActivity}
           />
@@ -317,21 +353,17 @@ export default function ActivityScreen({ navigation }) {
         ListHeaderComponent={header}
         contentContainerStyle={styles.listPadding}
         onEndReached={() => {
-          if (!loading && hasMore) {
+          if (hasMore && !loadingMoreRef.current && !refreshingRef.current) {
             fetchActivities(page + 1);
           }
         }}
-        onEndReachedThreshold={0.2}
-        removeClippedSubviews
+        onEndReachedThreshold={0.45}
+        removeClippedSubviews={false}
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={6}
-        getItemLayout={(_, index) => ({
-          length: CARD_HEIGHT + 15,
-          offset: (CARD_HEIGHT + 15) * index,
-          index,
-        })}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchActivities(1, true); }} tintColor="#2ecc71" />}
+        refreshing={refreshing}
+        onRefresh={() => fetchActivities(1, true)}
       />
     </SafeAreaView>
   );

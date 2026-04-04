@@ -109,13 +109,14 @@ function AppShell() {
             <Stack.Navigator
               screenOptions={{
                 headerTintColor: '#20323a',
-                headerBackTitleVisible: false,
+                headerBackTitleVisible: true,
+                headerBackTitle: '返回',
                 headerShadowVisible: false,
                 gestureEnabled: true,
                 cardStyle: { backgroundColor: '#f4f7f6' },
               }}
             >
-              <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
+              <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false, title: '返回' }} />
               <Stack.Screen name="MyActivities" component={MyActivitiesScreen} options={{ title: '我的活动' }} />
               <Stack.Screen name="TribeList" component={TribeListScreen} options={{ title: '我的部落' }} />
               <Stack.Screen
@@ -159,3 +160,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+

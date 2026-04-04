@@ -20,6 +20,10 @@ import { useAuth } from '../context/AuthContext';
 import { useActivityOverlay } from '../context/ActivityOverlayContext';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
+
+function normalizeId(value) {
+  return `${value ?? ''}`;
+}
 const TABS = [
   { key: 'joined', label: '已报名', type: 2 },
   { key: 'pending', label: '审核中', type: 1 },
@@ -45,14 +49,26 @@ function measureRef(ref) {
 
 function MyActivityCard({ item, hidden, onOpen, translateY }) {
   const cardRef = useRef(null);
+  const titleRef = useRef(null);
+  const creditRef = useRef(null);
+  const countRef = useRef(null);
 
   const handlePress = async () => {
-    const layout = await measureRef(cardRef);
+    const [layout, titleLayout, creditLayout, countLayout] = await Promise.all([
+      measureRef(cardRef),
+      measureRef(titleRef),
+      measureRef(creditRef),
+      measureRef(countRef),
+    ]);
     if (layout) {
-      onOpen(item, layout, 'default');
+      const sourceTextLayouts = {
+        title: titleLayout ? { ...titleLayout, fontSize: 16 } : null,
+        credit: creditLayout ? { ...creditLayout, fontSize: 12 } : null,
+        count: countLayout ? { ...countLayout, fontSize: 11 } : null,
+      };
+      onOpen(item, layout, 'default', { sourceTextLayouts });
     }
   };
-
   return (
     <Animated.View
       ref={cardRef}
@@ -66,7 +82,7 @@ function MyActivityCard({ item, hidden, onOpen, translateY }) {
       <Pressable style={styles.activityCard} onPress={handlePress}>
         <UniversalImage uri={item.logo} style={styles.activityLogo} />
         <View style={styles.cardContent}>
-          <Text style={styles.activityTitle} numberOfLines={2}>{item.name}</Text>
+          <Text ref={titleRef} style={styles.activityTitle} numberOfLines={2}>{item.name}</Text>
 
           <View style={styles.infoGrid}>
             <View style={styles.infoItem}>
@@ -75,7 +91,7 @@ function MyActivityCard({ item, hidden, onOpen, translateY }) {
             </View>
             <View style={styles.infoItem}>
               <Ionicons name="ribbon-outline" size={14} color="#e67e22" />
-              <Text style={[styles.infoText, styles.creditText]}>+{item.credit} 学分</Text>
+              <Text ref={creditRef} style={[styles.infoText, styles.creditText]}>+{item.credit} 学分</Text>
             </View>
           </View>
 
@@ -83,7 +99,7 @@ function MyActivityCard({ item, hidden, onOpen, translateY }) {
             <View style={styles.statusTag}>
               <Text style={styles.statusText}>{item.statusName || '进行中'}</Text>
             </View>
-            <Text style={styles.countText}>已报 {item.joinUserCount || 0}/{item.allowUserCount || 0}</Text>
+            <Text ref={countRef} style={styles.countText}>已报 {item.joinUserCount || 0}/{item.allowUserCount || 0}</Text>
           </View>
         </View>
       </Pressable>
@@ -172,7 +188,8 @@ export default function MyActivitiesScreen() {
       return null;
     }
 
-    const targetIndex = list.findIndex((entry) => entry.id === returningActivityId);
+    const targetId = normalizeId(returningActivityId);
+    const targetIndex = list.findIndex((entry) => normalizeId(entry?.id) === targetId);
     if (targetIndex === -1 || index === targetIndex || Math.abs(index - targetIndex) > 2) {
       return null;
     }
@@ -186,6 +203,8 @@ export default function MyActivitiesScreen() {
       outputRange: [0, direction * distance * 0.54 * damp, direction * distance * 0.2 * damp, 0],
     });
   };
+  const hiddenActivityId = normalizeId(activeActivityId);
+  const returningTargetId = normalizeId(returningActivityId);
 
   return (
     <View style={styles.container}>
@@ -216,9 +235,9 @@ export default function MyActivitiesScreen() {
           renderItem={({ item, index }) => (
             <MyActivityCard
               item={item}
-              hidden={activeActivityId === item.id}
+              hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
               translateY={buildReturnShift(index, items)}
-              onOpen={(entry, layout, variant) => openActivity(entry, layout, variant, { topOffset: headerOffset })}
+              onOpen={(entry, layout, variant, options = {}) => openActivity(entry, layout, variant, { topOffset: headerOffset, ...options })}
             />
           )}
         />
