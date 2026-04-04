@@ -12,7 +12,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2️⃣ Node环境（用20更稳）
+      # 2️⃣ Node 环境（用 20 更稳定）
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -22,30 +22,35 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # 4️⃣ 生成 iOS 原生项目（关键：用 npx expo，不用 expo-cli）
+      # 4️⃣ 修复权限（解决 Permission denied）
+      - name: Fix permissions
+        run: chmod -R +x node_modules/.bin
+
+      # 5️⃣ Expo prebuild（用新版 CLI）
       - name: Expo prebuild
         run: npx expo prebuild --platform ios
 
-      # 5️⃣ 安装 CocoaPods
+      # 6️⃣ 安装 CocoaPods
       - name: Install CocoaPods
         run: |
           cd ios
           pod install
 
-      # 6️⃣ 构建 .app（不签名）
+      # 7️⃣ 构建（不签名）
       - name: Build app (no signing)
         run: |
           cd ios
+          SCHEME=$(ls *.xcodeproj | sed 's/.xcodeproj//')
           xcodebuild \
             -workspace *.xcworkspace \
-            -scheme $(ls *.xcodeproj | sed 's/.xcodeproj//') \
+            -scheme $SCHEME \
             -configuration Release \
             -sdk iphoneos \
             -archivePath build/App.xcarchive \
             archive \
             CODE_SIGNING_ALLOWED=NO
 
-      # 7️⃣ 生成 IPA（手动打包 Payload）
+      # 8️⃣ 生成 IPA（手动打包）
       - name: Create IPA
         run: |
           cd ios/build
@@ -53,7 +58,7 @@ jobs:
           cp -r App.xcarchive/Products/Applications/*.app Payload/
           zip -r app.ipa Payload
 
-      # 8️⃣ 上传 IPA
+      # 9️⃣ 上传 IPA
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
