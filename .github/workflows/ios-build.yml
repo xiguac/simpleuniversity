@@ -14,17 +14,31 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm install
+      - name: Install dependencies
+        run: npm install
 
-      - run: chmod -R +x node_modules/.bin
+      - name: Fix permissions
+        run: chmod -R +x node_modules/.bin
 
-      - run: npx expo prebuild --platform ios
+      # ✅ 关键：设置环境变量
+      - name: Set env
+        run: echo "NODE_ENV=production" >> $GITHUB_ENV
 
-      - run: |
+      # ✅ 关键：prebuild
+      - name: Expo prebuild
+        run: npx expo prebuild --platform ios
+
+      # ✅ 关键：提前生成 codegen
+      - name: Generate codegen
+        run: npx react-native codegen
+
+      - name: Install CocoaPods
+        run: |
           cd ios
           pod install
 
-      - name: Build
+      # ✅ 最终构建（完全禁签名）
+      - name: Build app
         run: |
           cd ios
 
@@ -41,7 +55,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
 
-      - name: Make IPA
+      # 打 IPA
+      - name: Create IPA
         run: |
           cd ios/build
           mkdir -p Payload
