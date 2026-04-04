@@ -23,8 +23,8 @@ jobs:
             npm install
           fi
 
-      - name: Disable RN new architecture
-        run: echo "RCT_NEW_ARCH_ENABLED=0" >> "$GITHUB_ENV"
+      - name: Enable RN new architecture
+        run: echo "RCT_NEW_ARCH_ENABLED=1" >> "$GITHUB_ENV"
 
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --non-interactive --clean
