@@ -13,50 +13,71 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
-      - name: Fix permissions
-        run: chmod -R +x node_modules/.bin
+      - name: Disable RN new architecture
+        run: echo "RCT_NEW_ARCH_ENABLED=0" >> "$GITHUB_ENV"
 
-      # ✅ 关键：禁用 RN 新架构（避免 codegen）
-      - name: Disable new architecture
-        run: echo "RCT_NEW_ARCH_ENABLED=0" >> $GITHUB_ENV
-
-      - name: Expo prebuild
-        run: npx expo prebuild --platform ios
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --non-interactive --clean
 
       - name: Install CocoaPods
         run: |
           cd ios
           pod install
 
-      - name: Build app
+      - name: Detect workspace and scheme
         run: |
           cd ios
+          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" -print -quit)
+          if [ -z "$WORKSPACE" ]; then
+            echo "No .xcworkspace found in ios/."
+            exit 1
+          fi
 
+          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE" | python3 -c "import json,sys; d=json.load(sys.stdin); s=d.get('workspace',{}).get('schemes',[]); print(next((x for x in s if not x.startswith('Pods-')), s[0] if s else ''))")
+          if [ -z "$SCHEME" ]; then
+            echo "No scheme found in workspace $WORKSPACE"
+            exit 1
+          fi
+
+          echo "IOS_WORKSPACE=${WORKSPACE#./}" >> "$GITHUB_ENV"
+          echo "IOS_SCHEME=$SCHEME" >> "$GITHUB_ENV"
+          echo "Detected workspace: ${WORKSPACE#./}"
+          echo "Detected scheme: $SCHEME"
+
+      - name: Build archive (unsigned)
+        run: |
+          cd ios
           xcodebuild \
-            -workspace app.xcworkspace \
-            -scheme app \
+            -workspace "$IOS_WORKSPACE" \
+            -scheme "$IOS_SCHEME" \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -archivePath build/App.xcarchive \
+            -archivePath "build/${IOS_SCHEME}.xcarchive" \
             archive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
 
-      - name: Create IPA
+      - name: Create IPA artifact (unsigned)
         run: |
           cd ios/build
           mkdir -p Payload
-          cp -r App.xcarchive/Products/Applications/*.app Payload/
-          zip -r app.ipa Payload
+          cp -R "${IOS_SCHEME}.xcarchive/Products/Applications"/*.app Payload/
+          /usr/bin/zip -r app-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa
-          path: ios/build/app.ipa
+          name: ios-unsigned-ipa
+          path: ios/build/app-unsigned.ipa
