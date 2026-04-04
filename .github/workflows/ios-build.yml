@@ -12,7 +12,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2️⃣ Node 环境（用 20 更稳定）
+      # 2️⃣ Node 环境（用 20 稳）
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -26,7 +26,7 @@ jobs:
       - name: Fix permissions
         run: chmod -R +x node_modules/.bin
 
-      # 5️⃣ Expo prebuild（用新版 CLI）
+      # 5️⃣ Expo 生成 iOS 工程（新版 CLI）
       - name: Expo prebuild
         run: npx expo prebuild --platform ios
 
@@ -36,21 +36,23 @@ jobs:
           cd ios
           pod install
 
-      # 7️⃣ 构建（不签名）
+      # 7️⃣ 构建（不签名，写死 scheme=app，最稳定）
       - name: Build app (no signing)
         run: |
           cd ios
-          SCHEME=$(ls *.xcodeproj | sed 's/.xcodeproj//')
+
+          echo "Building with scheme: app"
+
           xcodebuild \
-            -workspace *.xcworkspace \
-            -scheme $SCHEME \
+            -workspace app.xcworkspace \
+            -scheme app \
             -configuration Release \
             -sdk iphoneos \
             -archivePath build/App.xcarchive \
             archive \
             CODE_SIGNING_ALLOWED=NO
 
-      # 8️⃣ 生成 IPA（手动打包）
+      # 8️⃣ 打包 IPA
       - name: Create IPA
         run: |
           cd ios/build
