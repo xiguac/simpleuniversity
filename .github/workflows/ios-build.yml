@@ -1,4 +1,4 @@
-name: Build iOS IPA
+name: Build iOS IPA (Unsigned)
 
 on:
   workflow_dispatch:
@@ -8,29 +8,32 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      # 1️⃣ 拉代码
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2️⃣ Node环境（用20更稳）
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
-      - name: Install deps
+      # 3️⃣ 安装依赖
+      - name: Install dependencies
         run: npm install
 
-      - name: Install Expo CLI
-        run: npm install -g expo-cli
-
-      - name: Prebuild (ensure ios exists)
+      # 4️⃣ 生成 iOS 原生项目（关键：用 npx expo，不用 expo-cli）
+      - name: Expo prebuild
         run: npx expo prebuild --platform ios
 
+      # 5️⃣ 安装 CocoaPods
       - name: Install CocoaPods
         run: |
           cd ios
           pod install
 
-      - name: Build (unsigned)
+      # 6️⃣ 构建 .app（不签名）
+      - name: Build app (no signing)
         run: |
           cd ios
           xcodebuild \
@@ -42,25 +45,17 @@ jobs:
             archive \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Export IPA (unsigned)
-        run: |
-          cd ios
-          mkdir -p build/ipa
-          xcodebuild -exportArchive \
-            -archivePath build/App.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath build/ipa \
-            CODE_SIGNING_ALLOWED=NO || true
-
-      - name: Zip Payload as IPA
+      # 7️⃣ 生成 IPA（手动打包 Payload）
+      - name: Create IPA
         run: |
           cd ios/build
           mkdir -p Payload
           cp -r App.xcarchive/Products/Applications/*.app Payload/
           zip -r app.ipa Payload
 
+      # 8️⃣ 上传 IPA
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: app-ipa
+          name: ios-ipa
           path: ios/build/app.ipa
