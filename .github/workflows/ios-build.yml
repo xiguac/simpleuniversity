@@ -8,61 +8,47 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      # 1️⃣ 拉代码
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 2️⃣ Node 环境（用 20 稳）
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # 3️⃣ 安装依赖
-      - name: Install dependencies
-        run: npm install
+      - run: npm install
 
-      # 4️⃣ 修复权限（解决 Permission denied）
-      - name: Fix permissions
-        run: chmod -R +x node_modules/.bin
+      - run: chmod -R +x node_modules/.bin
 
-      # 5️⃣ Expo 生成 iOS 工程（新版 CLI）
-      - name: Expo prebuild
-        run: npx expo prebuild --platform ios
+      - run: npx expo prebuild --platform ios
 
-      # 6️⃣ 安装 CocoaPods
-      - name: Install CocoaPods
-        run: |
+      - run: |
           cd ios
           pod install
 
-      # 7️⃣ 构建（不签名，写死 scheme=app，最稳定）
-      - name: Build app (no signing)
+      - name: Build
         run: |
           cd ios
-
-          echo "Building with scheme: app"
 
           xcodebuild \
             -workspace app.xcworkspace \
             -scheme app \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -archivePath build/App.xcarchive \
             archive \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
 
-      # 8️⃣ 打包 IPA
-      - name: Create IPA
+      - name: Make IPA
         run: |
           cd ios/build
           mkdir -p Payload
           cp -r App.xcarchive/Products/Applications/*.app Payload/
           zip -r app.ipa Payload
 
-      # 9️⃣ 上传 IPA
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
           path: ios/build/app.ipa
