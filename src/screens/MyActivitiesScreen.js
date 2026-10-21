@@ -1,8 +1,7 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
+import { buildPuHeaders } from '../api/puApi';
 import {
   ActivityIndicator,
-  Animated,
-  BackHandler,
   FlatList,
   Image,
   Platform,
@@ -21,9 +20,6 @@ import { useActivityOverlay } from '../context/ActivityOverlayContext';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
-function normalizeId(value) {
-  return `${value ?? ''}`;
-}
 const TABS = [
   { key: 'joined', label: '已报名', type: 2 },
   { key: 'pending', label: '审核中', type: 1 },
@@ -47,38 +43,20 @@ function measureRef(ref) {
   });
 }
 
-function MyActivityCard({ item, hidden, onOpen, translateY }) {
+function MyActivityCard({ item, onOpen }) {
   const cardRef = useRef(null);
   const titleRef = useRef(null);
   const creditRef = useRef(null);
   const countRef = useRef(null);
 
   const handlePress = async () => {
-    const [layout, titleLayout, creditLayout, countLayout] = await Promise.all([
-      measureRef(cardRef),
-      measureRef(titleRef),
-      measureRef(creditRef),
-      measureRef(countRef),
-    ]);
+    const layout = await measureRef(cardRef);
     if (layout) {
-      const sourceTextLayouts = {
-        title: titleLayout ? { ...titleLayout, fontSize: 16 } : null,
-        credit: creditLayout ? { ...creditLayout, fontSize: 12 } : null,
-        count: countLayout ? { ...countLayout, fontSize: 11 } : null,
-      };
-      onOpen(item, layout, 'default', { sourceTextLayouts });
+      onOpen(item, layout, 'default', {});
     }
   };
   return (
-    <Animated.View
-      ref={cardRef}
-      collapsable={false}
-      style={[
-        styles.cardWrap,
-        hidden && styles.hiddenCard,
-        translateY ? { transform: [{ translateY }] } : null,
-      ]}
-    >
+    <View ref={cardRef} collapsable={false} style={styles.cardWrap}>
       <Pressable style={styles.activityCard} onPress={handlePress}>
         <UniversalImage uri={item.logo} style={styles.activityLogo} />
         <View style={styles.cardContent}>
@@ -103,22 +81,14 @@ function MyActivityCard({ item, hidden, onOpen, translateY }) {
           </View>
         </View>
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }
 
 export default function MyActivitiesScreen() {
   const navigation = useNavigation();
   const { authFetchJson } = useAuth();
-  const {
-    openActivity,
-    closeActivity,
-    activeActivityId,
-    returningActivityId,
-    activityReturnHeight,
-    activityReturnProgress,
-    isActivityOpen,
-  } = useActivityOverlay();
+  const { openActivity } = useActivityOverlay();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const headerOffset = Math.max(0, headerHeight - insets.top);
@@ -133,10 +103,7 @@ export default function MyActivitiesScreen() {
       const { token, baseUserInfo } = JSON.parse(savedUser);
       const json = await authFetchJson('https://apis.pocketuni.net/apis/activity/myList', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}:${baseUserInfo.sid}`,
-        },
+        headers: buildPuHeaders(token, baseUserInfo.sid),
         body: JSON.stringify({ type: tab.type, page: 1, limit: 10 }),
       });
 
@@ -158,53 +125,6 @@ export default function MyActivitiesScreen() {
   useEffect(() => {
     fetchList(activeTab);
   }, [activeTab]);
-
-  useEffect(() => {
-    navigation.setOptions({
-      gestureEnabled: !isActivityOpen,
-      headerLeft: isActivityOpen
-        ? () => (
-            <Pressable onPress={closeActivity} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
-              <Ionicons name="chevron-back" size={24} color="#20323a" />
-            </Pressable>
-          )
-        : undefined,
-    });
-  }, [closeActivity, isActivityOpen, navigation]);
-
-  useEffect(() => {
-    if (!isActivityOpen) {
-      return undefined;
-    }
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeActivity();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [closeActivity, isActivityOpen]);
-
-  const buildReturnShift = (index, list) => {
-    if (!returningActivityId || !activityReturnProgress) {
-      return null;
-    }
-
-    const targetId = normalizeId(returningActivityId);
-    const targetIndex = list.findIndex((entry) => normalizeId(entry?.id) === targetId);
-    if (targetIndex === -1 || index === targetIndex || Math.abs(index - targetIndex) > 2) {
-      return null;
-    }
-
-    const direction = index < targetIndex ? -1 : 1;
-    const distance = Math.max(activityReturnHeight - 18, 0);
-    const damp = Math.abs(index - targetIndex) === 2 ? 0.56 : 1;
-
-    return activityReturnProgress.interpolate({
-      inputRange: [0, 0.58, 0.82, 1],
-      outputRange: [0, direction * distance * 0.54 * damp, direction * distance * 0.2 * damp, 0],
-    });
-  };
-  const hiddenActivityId = normalizeId(activeActivityId);
-  const returningTargetId = normalizeId(returningActivityId);
 
   return (
     <View style={styles.container}>
@@ -228,16 +148,13 @@ export default function MyActivitiesScreen() {
       ) : (
         <FlatList
           data={items}
-          extraData={`${activeActivityId ?? ''}-${returningActivityId ?? ''}-${isActivityOpen}`}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={<Text style={styles.emptyText}>当前没有相关活动</Text>}
-          renderItem={({ item, index }) => (
+          renderItem={({ item }) => (
             <MyActivityCard
               item={item}
-              hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
-              translateY={buildReturnShift(index, items)}
-              onOpen={(entry, layout, variant, options = {}) => openActivity(entry, layout, variant, { topOffset: headerOffset, ...options })}
+              onOpen={(entry, layout, variant, options = {}) => openActivity(entry, layout, variant, { topOffset: headerOffset, ...options }, navigation)}
             />
           )}
         />
@@ -258,7 +175,6 @@ const styles = StyleSheet.create({
   listContent: { paddingHorizontal: 16, paddingBottom: 36 },
   emptyText: { textAlign: 'center', color: '#92a2a9', marginTop: 30 },
   cardWrap: { marginBottom: 15 },
-  hiddenCard: { opacity: 0 },
   activityCard: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 22, padding: 12, elevation: 2 },
   activityLogo: { width: 100, height: 100, borderRadius: 15 },
   cardContent: { flex: 1, marginLeft: 15, justifyContent: 'space-between' },

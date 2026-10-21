@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -33,6 +32,11 @@ export function AuthProvider({ children }) {
       const authError = new Error('AUTH_EXPIRED');
       authError.code = 'AUTH_EXPIRED';
       throw authError;
+    }
+
+    // 调试：非零响应打印完整 body，便于定位“需要更新客户端”等错误的真实 code/msg
+    if (json?.code && json.code !== 0) {
+      console.warn('[PU API]', url, '->', text.slice(0, 400));
     }
 
     return json;

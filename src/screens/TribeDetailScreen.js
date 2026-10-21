@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
-  BackHandler,
   FlatList,
   Image,
   Platform,
@@ -18,12 +16,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useActivityOverlay } from '../context/ActivityOverlayContext';
+import { buildPuHeaders } from '../api/puApi';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
-
-function normalizeId(value) {
-  return `${value ?? ''}`;
-}
 
 const UniversalImage = ({ uri, style, radius = 10 }) => {
   if (Platform.OS === 'web') {
@@ -42,7 +37,7 @@ function measureRef(ref) {
   });
 }
 
-function TribeEventCard({ item, hidden, onOpen, translateY }) {
+function TribeEventCard({ item, onOpen }) {
   const cardRef = useRef(null);
   const titleRef = useRef(null);
   const creditRef = useRef(null);
@@ -66,11 +61,7 @@ function TribeEventCard({ item, hidden, onOpen, translateY }) {
   };
 
   return (
-    <Animated.View
-      ref={cardRef}
-      collapsable={false}
-      style={[styles.eventWrap, hidden && styles.hiddenCard, translateY ? { transform: [{ translateY }] } : null]}
-    >
+    <View ref={cardRef} collapsable={false} style={styles.eventWrap}>
       <Pressable style={styles.eventCard} onPress={handlePress}>
         <UniversalImage uri={item.logo} style={styles.eventLogo} radius={15} />
         <View style={styles.eventInfo}>
@@ -93,7 +84,7 @@ function TribeEventCard({ item, hidden, onOpen, translateY }) {
           </View>
         </View>
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -107,15 +98,7 @@ export default function TribeDetailScreen({ route }) {
   const insets = useSafeAreaInsets();
   const headerOffset = Math.max(0, headerHeight - insets.top);
   const { authFetchJson } = useAuth();
-  const {
-    openActivity,
-    closeActivity,
-    activeActivityId,
-    returningActivityId,
-    activityReturnHeight,
-    activityReturnProgress,
-    isActivityOpen,
-  } = useActivityOverlay();
+  const { openActivity } = useActivityOverlay();
 
   useEffect(() => {
     (async () => {
@@ -126,12 +109,12 @@ export default function TribeDetailScreen({ route }) {
         const [infoJson, eventJson] = await Promise.all([
           authFetchJson('https://apis.pocketuni.net/apis/tribe/info', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}:${baseUserInfo.sid}` },
+            headers: buildPuHeaders(token, baseUserInfo.sid),
             body: JSON.stringify({ tribeID }),
           }),
           authFetchJson('https://apis.pocketuni.net/apis/tribe/eventList', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}:${baseUserInfo.sid}` },
+            headers: buildPuHeaders(token, baseUserInfo.sid),
             body: JSON.stringify({ tribeID, page: 1, limit: 10 }),
           }),
         ]);
@@ -152,74 +135,14 @@ export default function TribeDetailScreen({ route }) {
     })();
   }, [authFetchJson, tribeID]);
 
-  useEffect(() => {
-    navigation.setOptions({
-      gestureEnabled: !isActivityOpen,
-      headerLeft: isActivityOpen
-        ? () => (
-            <Pressable onPress={closeActivity} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
-              <Ionicons name="chevron-back" size={24} color="#20323a" />
-            </Pressable>
-          )
-        : undefined,
-    });
-  }, [closeActivity, isActivityOpen, navigation]);
-
-  useEffect(() => {
-    if (!isActivityOpen) {
-      return undefined;
-    }
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      closeActivity();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [closeActivity, isActivityOpen]);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
-      if (!isActivityOpen) {
-        return;
-      }
-      event.preventDefault();
-      closeActivity();
-    });
-    return unsubscribe;
-  }, [closeActivity, isActivityOpen, navigation]);
-
   if (loading || !info) {
     return <View style={styles.center}><ActivityIndicator color="#2ecc71" /></View>;
   }
-
-  const buildReturnShift = (index, list) => {
-    if (!returningActivityId || !activityReturnProgress) {
-      return null;
-    }
-
-    const targetId = normalizeId(returningActivityId);
-    const targetIndex = list.findIndex((entry) => normalizeId(entry?.id) === targetId);
-    if (targetIndex === -1 || index === targetIndex || Math.abs(index - targetIndex) > 2) {
-      return null;
-    }
-
-    const direction = index < targetIndex ? -1 : 1;
-    const distance = Math.max(activityReturnHeight - 18, 0);
-    const damp = Math.abs(index - targetIndex) === 2 ? 0.56 : 1;
-
-    return activityReturnProgress.interpolate({
-      inputRange: [0, 0.58, 0.82, 1],
-      outputRange: [0, direction * distance * 0.54 * damp, direction * distance * 0.2 * damp, 0],
-    });
-  };
-
-  const hiddenActivityId = normalizeId(activeActivityId);
-  const returningTargetId = normalizeId(returningActivityId);
 
   return (
     <View style={styles.container}>
       <FlatList
         data={events}
-        extraData={`${activeActivityId ?? ''}-${returningActivityId ?? ''}-${isActivityOpen}`}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={(
@@ -232,12 +155,10 @@ export default function TribeDetailScreen({ route }) {
             <Text style={styles.sectionTitle}>部落活动</Text>
           </>
         )}
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <TribeEventCard
             item={item}
-            hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
-            translateY={buildReturnShift(index, events)}
-            onOpen={(entry, layout, variant, options = {}) => openActivity(entry, layout, variant, { topOffset: headerOffset, ...options })}
+            onOpen={(entry, layout, variant, options = {}) => openActivity(entry, layout, variant, { topOffset: headerOffset, ...options }, navigation)}
           />
         )}
       />
@@ -255,7 +176,6 @@ const styles = StyleSheet.create({
   typeTag: { backgroundColor: '#e8f8f0', color: '#2ecc71', padding: 6, borderRadius: 8, marginTop: 10, fontSize: 12, fontWeight: 'bold' },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginVertical: 15 },
   eventWrap: { marginBottom: 15, backgroundColor: 'white', borderRadius: 22 },
-  hiddenCard: { opacity: 0 },
   eventCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',

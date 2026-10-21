@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,9 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import { useSharedActivityTransition } from '../shared/SharedActivityTransition';
 import { useAuth } from '../context/AuthContext';
+import { buildPuHeaders } from '../api/puApi';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -25,25 +24,11 @@ const UniversalImage = ({ uri, style }) => {
   return <Image source={{ uri, headers: IMAGE_HEADERS }} style={style} resizeMode="cover" />;
 };
 
-function measureRef(ref) {
-  return new Promise((resolve) => {
-    if (!ref?.current?.measureInWindow) {
-      resolve(null);
-      return;
-    }
-    ref.current.measureInWindow((x, y, width, height) => resolve({ x, y, width, height }));
-  });
-}
-
 export default function ActivityDetailScreen({ route }) {
-  const navigation = useNavigation();
   const { activityId, previewItem } = route.params;
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
-  const heroRef = useRef(null);
-  const bypassBackAnimationRef = useRef(false);
-  const { registerActivityTarget, beginActivityReturn, isActivityTransitioning } = useSharedActivityTransition();
   const { authFetchJson } = useAuth();
 
   useEffect(() => {
@@ -53,10 +38,7 @@ export default function ActivityDetailScreen({ route }) {
         const { token, baseUserInfo } = JSON.parse(savedUser);
         const json = await authFetchJson('https://apis.pocketuni.net/apis/activity/info', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}:${baseUserInfo.sid}`,
-          },
+          headers: buildPuHeaders(token, baseUserInfo.sid),
           body: JSON.stringify({ id: activityId }),
         });
         if (json.code === 0) {
@@ -72,39 +54,6 @@ export default function ActivityDetailScreen({ route }) {
     })();
   }, [activityId, authFetchJson]);
 
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      const layout = await measureRef(heroRef);
-      if (layout) {
-        registerActivityTarget(activityId, { layout });
-      }
-    }, 60);
-
-    return () => clearTimeout(timer);
-  }, [activityId, registerActivityTarget]);
-
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
-      if (bypassBackAnimationRef.current) {
-        return;
-      }
-
-      if (event.data.action.type !== 'GO_BACK' && event.data.action.type !== 'POP') {
-        return;
-      }
-
-      event.preventDefault();
-
-      requestAnimationFrame(async () => {
-        const layout = await measureRef(heroRef);
-        bypassBackAnimationRef.current = true;
-        beginActivityReturn(activityId, { layout }, () => navigation.dispatch(event.data.action));
-      });
-    });
-
-    return unsubscribe;
-  }, [activityId, beginActivityReturn, navigation]);
-
   const handleJoin = async () => {
     setJoining(true);
     try {
@@ -112,10 +61,7 @@ export default function ActivityDetailScreen({ route }) {
       const { token, baseUserInfo } = JSON.parse(savedUser);
       const resJson = await authFetchJson('https://apis.pocketuni.net/apis/activity/join', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}:${baseUserInfo.sid}`,
-        },
+        headers: buildPuHeaders(token, baseUserInfo.sid, { needSign: true }),
         body: JSON.stringify({ activityId }),
       });
 
@@ -131,7 +77,38 @@ export default function ActivityDetailScreen({ route }) {
       }
     } catch (error) {
       if (error.code !== 'AUTH_EXPIRED') {
-        Alert.alert('错误', '网络请求失败');
+        Alert.alert('错误', `网络请求失败: ${error?.message || error}`);
+      }
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    setJoining(true);
+    try {
+      const savedUser = await AsyncStorage.getItem('user_data');
+      const { token, baseUserInfo } = JSON.parse(savedUser);
+      // 官方接口：取消报名无需 X-Sign
+      const resJson = await authFetchJson('https://apis.pocketuni.net/apis/activity/cancel', {
+        method: 'POST',
+        headers: buildPuHeaders(token, baseUserInfo.sid),
+        body: JSON.stringify({ activityId }),
+      });
+
+      if (resJson.code === 0) {
+        Alert.alert('已取消报名', '如需再次报名请留意活动名额');
+        setDetail((prev) => ({
+          ...prev,
+          userStatus: { ...prev.userStatus, hasJoin: 0 },
+          baseInfo: { ...prev.baseInfo, joinUserCount: Math.max(0, (prev.baseInfo.joinUserCount || 1) - 1) },
+        }));
+      } else {
+        Alert.alert('提示', resJson.message || '取消报名失败');
+      }
+    } catch (error) {
+      if (error.code !== 'AUTH_EXPIRED') {
+        Alert.alert('错误', `网络请求失败: ${error?.message || error}`);
       }
     } finally {
       setJoining(false);
@@ -183,7 +160,7 @@ export default function ActivityDetailScreen({ route }) {
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View ref={heroRef} collapsable={false} style={[styles.heroCard, isActivityTransitioning(activityId) && styles.heroHidden]}>
+        <View style={styles.heroCard}>
           <UniversalImage uri={baseInfo.logo} style={styles.detailLogo} />
           <View style={styles.headerRight}>
             <Text style={styles.detailTitle}>{baseInfo.name}</Text>
@@ -240,15 +217,15 @@ export default function ActivityDetailScreen({ route }) {
       {detail ? (
         <View style={styles.bottomBar}>
           <TouchableOpacity
-            style={[styles.joinBtn, (isJoined || isEnded || isFull) && styles.joinBtnDisabled]}
-            onPress={handleJoin}
-            disabled={isJoined || isEnded || isFull || joining}
+            style={[styles.joinBtn, isJoined && styles.cancelBtn, !isJoined && (isEnded || isFull) && styles.joinBtnDisabled]}
+            onPress={isJoined ? handleCancel : handleJoin}
+            disabled={joining || !isJoined && (isEnded || isFull)}
           >
             {joining ? (
               <ActivityIndicator color="white" />
             ) : (
               <Text style={styles.joinBtnText}>
-                {isJoined ? '已报名' : isEnded ? '已结束' : isFull ? '名额已满' : '立即报名'}
+                {isJoined ? '取消报名' : isEnded ? '已结束' : isFull ? '名额已满' : '立即报名'}
               </Text>
             )}
           </TouchableOpacity>
@@ -269,7 +246,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 24,
   },
-  heroHidden: { opacity: 0 },
   detailLogo: {
     width: 100,
     height: 100,
@@ -317,5 +293,6 @@ const styles = StyleSheet.create({
   },
   joinBtn: { backgroundColor: '#2ecc71', borderRadius: 18, padding: 18, alignItems: 'center' },
   joinBtnDisabled: { backgroundColor: '#bdc3c7' },
+  cancelBtn: { backgroundColor: '#e74c3c' },
   joinBtnText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
 });

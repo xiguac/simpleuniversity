@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { buildPuHeaders } from '../api/puApi';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,7 +42,7 @@ export default function TribeListScreen({ navigation }) {
         const { token, baseUserInfo } = JSON.parse(savedUser);
         const json = await authFetchJson('https://apis.pocketuni.net/apis/tribe/myList', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}:${baseUserInfo.sid}` },
+          headers: buildPuHeaders(token, baseUserInfo.sid),
           body: JSON.stringify({ type: 2, page: 1, limit: 10 }),
         });
         if (json.code === 0) {

@@ -1,8 +1,8 @@
-﻿import React, { memo, useEffect, useRef, useState } from 'react';
+﻿import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { buildPuHeaders } from '../api/puApi';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   FlatList,
   Image,
   Platform,
@@ -43,43 +43,22 @@ function measureRef(ref) {
   });
 }
 
-const ActivityCard = memo(function ActivityCard({ item, hidden, onOpen, translateY }) {
+const ActivityCard = memo(function ActivityCard({ item, onOpen }) {
   const cardRef = useRef(null);
-  const titleRef = useRef(null);
-  const creditRef = useRef(null);
-  const countRef = useRef(null);
 
   const handlePress = async () => {
-    const [layout, titleLayout, creditLayout, countLayout] = await Promise.all([
-      measureRef(cardRef),
-      measureRef(titleRef),
-      measureRef(creditRef),
-      measureRef(countRef),
-    ]);
+    const layout = await measureRef(cardRef);
     if (layout) {
-      const sourceTextLayouts = {
-        title: titleLayout ? { ...titleLayout, fontSize: 16 } : null,
-        credit: creditLayout ? { ...creditLayout, fontSize: 12 } : null,
-        count: countLayout ? { ...countLayout, fontSize: 11 } : null,
-      };
-      onOpen(item, layout, 'default', { sourceTextLayouts });
+      onOpen(item, layout, 'default', {});
     }
   };
 
   return (
-    <Animated.View
-      ref={cardRef}
-      collapsable={false}
-      style={[
-        styles.cardWrap,
-        hidden && styles.hiddenCard,
-        translateY ? { transform: [{ translateY }] } : null,
-      ]}
-    >
+    <View ref={cardRef} collapsable={false} style={styles.cardWrap}>
       <Pressable style={styles.activityCard} onPress={handlePress}>
         <UniversalImage uri={item.logo} style={styles.activityLogo} />
         <View style={styles.cardContent}>
-          <Text ref={titleRef} style={styles.activityTitle} numberOfLines={2}>
+          <Text style={styles.activityTitle} numberOfLines={2}>
             {item.name}
           </Text>
 
@@ -90,7 +69,7 @@ const ActivityCard = memo(function ActivityCard({ item, hidden, onOpen, translat
             </View>
             <View style={styles.infoItem}>
               <Ionicons name="ribbon-outline" size={14} color="#e67e22" />
-              <Text ref={creditRef} style={[styles.infoText, styles.creditText]}>+{item.credit} 学分</Text>
+              <Text style={[styles.infoText, styles.creditText]}>+{item.credit} 学分</Text>
             </View>
           </View>
 
@@ -98,11 +77,11 @@ const ActivityCard = memo(function ActivityCard({ item, hidden, onOpen, translat
             <View style={styles.statusTag}>
               <Text style={styles.statusText}>{item.statusName}</Text>
             </View>
-            <Text ref={countRef} style={styles.countText}>已报 {item.joinUserCount}/{item.allowUserCount}</Text>
+            <Text style={styles.countText}>已报 {item.joinUserCount}/{item.allowUserCount}</Text>
           </View>
         </View>
       </Pressable>
-    </Animated.View>
+    </View>
   );
 });
 
@@ -133,14 +112,12 @@ export default function ActivityScreen({ navigation }) {
   const refreshingRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const { authFetchJson } = useAuth();
-  const {
-    openActivity,
-    activeActivityId,
-    returningActivityId,
-    activityReturnHeight,
-    activityReturnProgress,
-    isActivityOpen,
-  } = useActivityOverlay();
+  const { openActivity } = useActivityOverlay();
+  // 打开活动详情：把屏幕自身 navigation 交给 openActivity 用于路由
+  const openDetail = useCallback(
+    (item, layout, variant, options) => openActivity(item, layout, variant, options, navigation),
+    [openActivity, navigation],
+  );
 
   const fetchActivities = async (pageNum, isRefresh = false) => {
     if (isRefresh) {
@@ -162,23 +139,26 @@ export default function ActivityScreen({ navigation }) {
       const { token, baseUserInfo } = JSON.parse(savedUser);
       const resJson = await authFetchJson('https://apis.pocketuni.net/apis/activity/list', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}:${baseUserInfo.sid}`,
-        },
+        headers: buildPuHeaders(token, baseUserInfo.sid),
         body: JSON.stringify({ sort: 0, page: pageNum, limit: 10, puType: 0 }),
       });
 
       if (resJson.code === 0 && resJson.data?.list) {
-        const newList = resJson.data.list;
+        const seen = new Set();
+        const dedupe = (list) => list.filter((a) => {
+          const id = String(a?.id);
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
         if (isRefresh) {
-          setActivities(newList);
+          setActivities(dedupe(resJson.data.list));
           setPage(1);
         } else {
-          setActivities((prev) => [...prev, ...newList]);
+          setActivities((prev) => dedupe([...prev, ...resJson.data.list]));
           setPage(pageNum);
         }
-        setHasMore(newList.length >= 10);
+        setHasMore(resJson.data.list.length >= 10);
       }
     } catch (error) {
       if (error.code !== 'AUTH_EXPIRED') {
@@ -210,10 +190,7 @@ export default function ActivityScreen({ navigation }) {
     try {
       const savedUser = await AsyncStorage.getItem('user_data');
       const { token, baseUserInfo } = JSON.parse(savedUser);
-      const headers = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}:${baseUserInfo.sid}`,
-      };
+      const headers = buildPuHeaders(token, baseUserInfo.sid);
 
       const [activityJson, tribeJson] = await Promise.all([
         authFetchJson('https://apis.pocketuni.net/apis/activity/list', {
@@ -246,30 +223,7 @@ export default function ActivityScreen({ navigation }) {
     fetchActivities(1, true);
   }, []);
 
-  const buildReturnShift = (itemId, index, list) => {
-    if (!returningActivityId || !activityReturnProgress) {
-      return null;
-    }
-
-    const targetId = normalizeId(returningActivityId);
-    const targetIndex = list.findIndex((entry) => normalizeId(entry?.id) === targetId);
-    if (targetIndex === -1 || index === targetIndex || Math.abs(index - targetIndex) > 2) {
-      return null;
-    }
-
-    const direction = index < targetIndex ? -1 : 1;
-    const distance = Math.max(activityReturnHeight - 18, 0);
-    const damp = Math.abs(index - targetIndex) === 2 ? 0.56 : 1;
-
-    return activityReturnProgress.interpolate({
-      inputRange: [0, 0.58, 0.82, 1],
-      outputRange: [0, direction * distance * 0.54 * damp, direction * distance * 0.2 * damp, 0],
-    });
-  };
-
   const isSearchingMode = submittedQuery.length > 0;
-  const hiddenActivityId = normalizeId(activeActivityId);
-  const returningTargetId = normalizeId(returningActivityId);
 
   const header = (
     <View style={styles.headerBlock}>
@@ -316,13 +270,11 @@ export default function ActivityScreen({ navigation }) {
             {searching ? <ActivityIndicator size="small" color="#2ecc71" /> : null}
           </View>
           {!searching && activityResults.length === 0 ? <Text style={styles.emptyHint}>没有找到相关活动</Text> : null}
-          {activityResults.map((item, index) => (
+          {activityResults.map((item) => (
             <ActivityCard
               key={`activity-${item.id}`}
               item={item}
-              hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
-              translateY={buildReturnShift(item.id, index, activityResults)}
-              onOpen={openActivity}
+              onOpen={openDetail}
             />
           ))}
 
@@ -340,14 +292,11 @@ export default function ActivityScreen({ navigation }) {
     <SafeAreaView edges={['top']} style={styles.container}>
       <FlatList
         data={activities}
-        extraData={`${activeActivityId ?? ''}-${returningActivityId ?? ''}-${isActivityOpen}`}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <ActivityCard
             item={item}
-            hidden={hiddenActivityId && normalizeId(item?.id) === hiddenActivityId && normalizeId(item?.id) !== returningTargetId}
-            translateY={buildReturnShift(item.id, index, activities)}
-            onOpen={openActivity}
+            onOpen={openDetail}
           />
         )}
         ListHeaderComponent={header}

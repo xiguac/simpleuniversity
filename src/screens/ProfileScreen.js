@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { buildPuHeaders } from '../api/puApi';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -33,17 +34,18 @@ export default function ProfileScreen() {
           const userData = JSON.parse(savedData);
           setUserInfo(userData);
 
-          const resJson = await authFetchJson('https://apis.pocketuni.net/apis/personal/credit', {
+          const resJson = await authFetchJson('https://apis.pocketuni.net/apis/user/pc-info', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${userData.token}:${userData.baseUserInfo.sid}`,
-            },
+            headers: buildPuHeaders(userData.token, userData.baseUserInfo.sid),
             body: JSON.stringify({}),
           });
 
+          // pc-info 返回：{credit, cx, event, tribe, ...}；cx 即诚信度
           if (resJson.code === 0 && resJson.data) {
-            setCreditData(resJson.data);
+            setCreditData({
+              totalCredit: resJson.data.credit ?? '0.00',
+              cx: resJson.data.cx ?? '100%',
+            });
           }
         }
       } catch (error) {
