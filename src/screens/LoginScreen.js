@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -152,6 +153,13 @@ export default function LoginScreen({ onLogin }) {
         style={styles.loginContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        {/* ScrollView + keyboardShouldPersistTaps：修复 iOS 首次点击输入框无响应 */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.loginContainer, { flexGrow: 1 }]}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+        >
         <View style={styles.loginCard}>
           <Text style={styles.loginHeader}>简校园</Text>
           <Text style={styles.loginSubHeader}>Simple University</Text>
@@ -203,6 +211,7 @@ export default function LoginScreen({ onLogin }) {
           </TouchableOpacity>
         </View>
 
+        {modalVisible && (
         <Modal visible={modalVisible} animationType="slide" transparent={false} onRequestClose={() => setModalVisible(false)}>
           <View style={styles.modalRoot}>
             <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 18) + 12 }]}> 
@@ -254,6 +263,8 @@ export default function LoginScreen({ onLogin }) {
             )}
           </View>
         </Modal>
+        )}
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

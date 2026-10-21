@@ -24,6 +24,8 @@ export default function LiquidGlassTabBar({ state, descriptors, navigation }) {
 
   return (
     <View pointerEvents="box-none" style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      {/* 玻璃底下的浅白垫底：保证按钮文字在任何背景下都可读 */}
+      {nativeGlass && <View style={styles.glassBackdrop} />}
       {nativeGlass ? (
         // 官方模式：GlassContainer 把每块玻璃合成一个整体
         <GlassContainer spacing={6} style={styles.container}>
@@ -103,13 +105,26 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
   },
+  glassBackdrop: {
+    position: 'absolute',
+    bottom: 0,
+    width: '86%',
+    maxWidth: 360,
+    height: 76,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    shadowColor: '#6cab88',
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+  },
   // 玻璃版本：容器只负责布局，液态外观来自聚合的子 GlassView
   // 非玻璃版本：容器提供整条轨道的底色
   container: {
     flexDirection: 'row',
     width: '86%',
     maxWidth: 360,
-    minHeight: 76,
+    height: 76,
     backgroundColor: nativeGlass ? 'transparent' : 'rgba(255,255,255,0.92)',
     borderRadius: 999,
     borderWidth: nativeGlass ? 0 : StyleSheet.hairlineWidth,
