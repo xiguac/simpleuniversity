@@ -2,18 +2,38 @@ name: Build iOS IPA (Unsigned)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ios-build.yml'
 
 jobs:
   build:
     runs-on: macos-latest
+    timeout-minutes: 90
+
+    env:
+      CI: 1
+      EXPO_NO_TELEMETRY: 1
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show toolchain versions
+        run: |
+          node -v
+          npm -v
+          xcodebuild -version
+          pod --version
 
       - name: Install dependencies
         run: |
@@ -27,7 +47,7 @@ jobs:
         run: echo "RCT_NEW_ARCH_ENABLED=1" >> "$GITHUB_ENV"
 
       - name: Generate native iOS project
-        run: npx expo prebuild --platform ios --non-interactive --clean
+        run: npx expo prebuild --platform ios --clean
 
       - name: Install CocoaPods
         run: |
@@ -73,11 +93,13 @@ jobs:
       - name: Create IPA artifact (unsigned)
         run: |
           cd ios/build
+          rm -rf Payload app-unsigned.ipa
           mkdir -p Payload
           cp -R "${IOS_SCHEME}.xcarchive/Products/Applications"/*.app Payload/
           /usr/bin/zip -r app-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-unsigned-ipa
+          name: ios-unsigned-ipa-${{ github.run_number }}
           path: ios/build/app-unsigned.ipa
+          if-no-files-found: error
