@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useActivityOverlay } from '../context/ActivityOverlayContext';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -56,6 +57,7 @@ const ActivityCard = memo(function ActivityCard({ item, onOpen }) {
   return (
     <View ref={cardRef} collapsable={false} style={styles.cardWrap}>
       <Pressable style={styles.activityCard} onPress={handlePress}>
+        <GlassFill radius={22} />
         <UniversalImage uri={item.logo} style={styles.activityLogo} />
         <View style={styles.cardContent}>
           <Text style={styles.activityTitle} numberOfLines={2}>
@@ -88,6 +90,7 @@ const ActivityCard = memo(function ActivityCard({ item, onOpen }) {
 function TribeSearchCard({ item, navigation }) {
   return (
     <TouchableOpacity style={styles.tribeCard} activeOpacity={0.9} onPress={() => navigation.navigate('TribeDetail', { tribeID: item.id })}>
+      <GlassFill radius={18} />
       <UniversalImage uri={item.logo} style={styles.tribeLogo} />
       <View style={styles.tribeInfo}>
         <Text style={styles.tribeName}>{item.name}</Text>
@@ -229,6 +232,7 @@ export default function ActivityScreen({ navigation }) {
     <View style={styles.headerBlock}>
       <Text style={styles.pageTitle}>发现活动</Text>
       <View style={styles.searchBox}>
+        <GlassFill radius={18} />
         <Ionicons name="search" size={18} color="#8da0a9" />
         <TextInput
           style={styles.searchInput}
@@ -324,13 +328,13 @@ const styles = StyleSheet.create({
   searchContent: { padding: 15, paddingBottom: 128 },
   headerBlock: { marginBottom: 18 },
   pageTitle: { fontSize: 28, fontWeight: '800', color: '#20323a', marginBottom: 14 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 18, paddingHorizontal: 14, minHeight: 52, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 2 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', borderRadius: 18, paddingHorizontal: 14, minHeight: 52, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 2 },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 15, color: '#22343c' },
   searchAction: { marginLeft: 10, backgroundColor: '#2ecc71', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   searchActionText: { color: 'white', fontSize: 13, fontWeight: '700' },
   cardWrap: { marginBottom: 15 },
   hiddenCard: { opacity: 0 },
-  activityCard: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 22, padding: 12, elevation: 2 },
+  activityCard: { flexDirection: 'row', backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', borderRadius: 22, padding: 12, elevation: 2 },
   activityLogo: { width: 100, height: 100, borderRadius: 15 },
   cardContent: { flex: 1, marginLeft: 15, justifyContent: 'space-between' },
   activityTitle: { fontSize: 16, fontWeight: '700', color: '#2c3e50' },
@@ -339,14 +343,14 @@ const styles = StyleSheet.create({
   infoText: { color: '#7f8c8d', marginLeft: 6, fontSize: 12 },
   creditText: { color: '#e67e22', fontWeight: 'bold' },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  statusTag: { backgroundColor: '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusTag: { backgroundColor: nativeGlass ? 'rgba(255,255,255,0.6)' : '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 11, color: '#95a5a6' },
   countText: { fontSize: 11, color: '#95a5a6' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 10 },
   searchSectionSpacing: { marginTop: 14 },
   sectionTitle: { fontSize: 17, fontWeight: '700', color: '#22343c' },
   emptyHint: { color: '#8fa0a6', fontSize: 14, marginBottom: 12 },
-  tribeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 18, padding: 12, marginBottom: 12 },
+  tribeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', borderRadius: 18, padding: 12, marginBottom: 12 },
   tribeLogo: { width: 54, height: 54, borderRadius: 14, backgroundColor: '#f0f0f0' },
   tribeInfo: { flex: 1, marginLeft: 14 },
   tribeName: { fontSize: 15, fontWeight: '700', color: '#20323a' },

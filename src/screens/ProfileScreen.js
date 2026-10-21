@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 
 const IMAGE_HEADERS = {
   Referer: 'https://class.pocketuni.net/',
@@ -75,6 +76,7 @@ export default function ProfileScreen() {
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.userCard}>
+          <GlassFill radius={25} />
           <UniversalImage uri={avatarUrl} style={styles.avatarImage} />
           <View style={styles.userTextContent}>
             <Text style={styles.userName}>{userInfo.fullProfile?.realname || '未登录'}</Text>
@@ -84,16 +86,19 @@ export default function ProfileScreen() {
 
         <View style={styles.row}>
           <View style={styles.smallCard}>
+            <GlassFill radius={20} />
             <Text style={styles.cardLabel}>实践学分</Text>
             <Text style={styles.cardValue}>{creditData.totalCredit}</Text>
           </View>
           <View style={styles.smallCard}>
+            <GlassFill radius={20} />
             <Text style={styles.cardLabel}>诚信度</Text>
             <Text style={[styles.cardValue, { color: '#3498db' }]}>{creditData.cx}</Text>
           </View>
         </View>
 
         <TouchableOpacity style={styles.listCard} activeOpacity={0.7} onPress={() => navigation.navigate('MyActivities')}>
+          <GlassFill radius={20} />
           <View style={styles.listLeft}>
             <View style={[styles.listIconBg, { backgroundColor: '#eef8ff' }]}>
               <Ionicons name="reader-outline" size={20} color="#3498db" />
@@ -104,6 +109,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.listCard} activeOpacity={0.7} onPress={() => navigation.navigate('TribeList')}>
+          <GlassFill radius={20} />
           <View style={styles.listLeft}>
             <View style={[styles.listIconBg, { backgroundColor: '#e8f8f0' }]}>
               <Ionicons name="people-outline" size={20} color="#2ecc71" />
@@ -118,6 +124,7 @@ export default function ProfileScreen() {
           activeOpacity={0.7}
           onPress={() => Linking.openURL('https://github.com/xiguac/simpleuniversity')}
         >
+          <GlassFill radius={20} />
           <View style={styles.listLeft}>
             <View style={[styles.listIconBg, { backgroundColor: '#f2f0fa' }]}>
               <Ionicons name="logo-github" size={20} color="#7d6ee0" />
@@ -141,7 +148,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   userCard: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white',
     marginHorizontal: 20,
     marginTop: 8,
     padding: 25,
@@ -159,7 +166,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', paddingHorizontal: 10, marginTop: 10, marginBottom: 12 },
   smallCard: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white',
     margin: 10,
     paddingVertical: 24,
     paddingHorizontal: 18,
@@ -176,7 +183,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white',
     marginHorizontal: 20,
     marginTop: 10,
     padding: 20,

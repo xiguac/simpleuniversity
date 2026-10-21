@@ -17,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useActivityOverlay } from '../context/ActivityOverlayContext';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -58,6 +59,7 @@ function MyActivityCard({ item, onOpen }) {
   return (
     <View ref={cardRef} collapsable={false} style={styles.cardWrap}>
       <Pressable style={styles.activityCard} onPress={handlePress}>
+        <GlassFill radius={22} />
         <UniversalImage uri={item.logo} style={styles.activityLogo} />
         <View style={styles.cardContent}>
           <Text ref={titleRef} style={styles.activityTitle} numberOfLines={2}>{item.name}</Text>
@@ -175,7 +177,7 @@ const styles = StyleSheet.create({
   listContent: { paddingHorizontal: 16, paddingBottom: 36 },
   emptyText: { textAlign: 'center', color: '#92a2a9', marginTop: 30 },
   cardWrap: { marginBottom: 15 },
-  activityCard: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 22, padding: 12, elevation: 2 },
+  activityCard: { flexDirection: 'row', backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', borderRadius: 22, padding: 12, elevation: 2 },
   activityLogo: { width: 100, height: 100, borderRadius: 15 },
   cardContent: { flex: 1, marginLeft: 15, justifyContent: 'space-between' },
   activityTitle: { fontSize: 16, fontWeight: '700', color: '#2c3e50' },
@@ -184,7 +186,7 @@ const styles = StyleSheet.create({
   infoText: { color: '#7f8c8d', marginLeft: 6, fontSize: 12 },
   creditText: { color: '#e67e22', fontWeight: 'bold' },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  statusTag: { backgroundColor: '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusTag: { backgroundColor: nativeGlass ? 'rgba(255,255,255,0.6)' : '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 11, color: '#95a5a6' },
   countText: { fontSize: 11, color: '#95a5a6' },
 });

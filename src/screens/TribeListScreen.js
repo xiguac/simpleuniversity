@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useAuth } from '../context/AuthContext';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -20,6 +21,7 @@ function TribeCard({ item, navigation }) {
   return (
     <View style={styles.card}>
       <Pressable style={styles.cardInner} onPress={() => navigation.navigate('TribeDetail', { tribeID: item.id })}>
+        <GlassFill radius={18} />
         <UniversalImage uri={item.logo} style={styles.logo} />
         <View style={styles.info}>
           <Text style={styles.name}>{item.name}</Text>
@@ -84,7 +86,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f4f7f6' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   card: { marginHorizontal: 15, marginTop: 15 },
-  cardInner: { flexDirection: 'row', backgroundColor: 'white', padding: 15, borderRadius: 18, alignItems: 'center', elevation: 2 },
+  cardInner: { flexDirection: 'row', backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', padding: 15, borderRadius: 18, alignItems: 'center', elevation: 2 },
   logo: { width: 55, height: 55, borderRadius: 12, backgroundColor: '#f0f0f0' },
   info: { flex: 1, marginLeft: 15 },
   name: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' },

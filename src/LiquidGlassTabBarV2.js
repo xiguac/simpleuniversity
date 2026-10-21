@@ -4,95 +4,81 @@ import { GlassContainer, GlassView, isGlassEffectAPIAvailable } from 'expo-glass
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// 严格按官方 expo-glass-effect 文档实现（docs.expo.dev/versions/v57.0.0/sdk/glass-effect/）：
-// 1. 多个玻璃元素必须放进 GlassContainer，spacing 控制它们"聚合"成一个整体液态玻璃
-// 2. 选中态切换用 glassEffectStyle={{ style, animate: true, animationDuration }} 的
-//    原生形变动画（'clear' ↔ 'none'），这是官方文档推荐的、不经 opacity 的动画方式
-// 3. 每个可点元素 isInteractive，获得系统液态玻璃的按压反馈
-// 4. 低版本 iOS / Android 回退为纯 View 实现，视觉逻辑一致
+// iOS 底部导航：一个椭圆形灰白底框 + 三个等宽按钮
+// iOS 26+ 使用 expo-glass-effect 液态玻璃（GlassContainer 聚合三个 GlassView）；
+// 其余平台回退为纯 View 实现，视觉一致。
 const nativeGlass = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
 
-const INDICATOR = {
-  active: { style: 'clear', animate: true, animationDuration: 0.35 },
-  inactive: { style: 'none', animate: true, animationDuration: 0.35 },
-};
+const BAR_HEIGHT = 72;
+const BAR_WIDTH = '86%';
+const MAX_WIDTH = 380;
+
+const ICONS = ['calendar-outline', 'qr-code-outline', 'person-outline'];
 
 export default function LiquidGlassTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
-  const isCenter = (index) => state.routes.length > 1 && index === Math.floor(state.routes.length / 2);
-  const iconColor = (focused) => (focused ? styles.focusText.color : styles.blurText.color);
+  const label = (route) => {
+    const { options } = descriptors[route.key];
+    const raw = options.tabBarLabel ?? options.title ?? route.name;
+    return typeof raw === 'string' ? raw : route.name;
+  };
 
   return (
-    <View pointerEvents="box-none" style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      {/* 玻璃底下的浅白垫底：保证按钮文字在任何背景下都可读 */}
-      {nativeGlass && <View style={styles.glassBackdrop} />}
-      {nativeGlass ? (
-        // 官方模式：GlassContainer 把每块玻璃合成一个整体
-        <GlassContainer spacing={6} style={styles.container}>
+    <View
+      pointerEvents="box-none"
+      style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}
+    >
+      {/* 椭圆形灰白底框：与玻璃铝片坐标完全对齐 */}
+      <View style={styles.base}>
+        <View style={[styles.bar, nativeGlass ? styles.barGlass : styles.barPlain]}>
           {state.routes.map((route, index) => {
             const isFocused = state.index === index;
-            const { options } = descriptors[route.key];
-            const rawLabel = options.tabBarLabel ?? options.title ?? route.name;
-            const label = typeof rawLabel === 'string' ? rawLabel : route.name;
+            const item = (
+              <Pressable
+                onPress={() => {
+                  const event = navigation.emit({
+                    type: 'tabPress',
+                    target: route.key,
+                    canPreventDefault: true,
+                  });
+                  if (!isFocused && !event.defaultPrevented) {
+                    navigation.navigate(route.name);
+                  }
+                }}
+                style={({ pressed }) => [styles.cell, pressed && styles.cellPressed]}
+              >
+                <Ionicons
+                  name={ICONS[index] || 'ellipse-outline'}
+                  size={22}
+                  color={isFocused ? '#0f5c3f' : '#667981'}
+                />
+                <Text style={[styles.label, isFocused ? styles.labelOn : styles.labelOff]}>
+                  {label(route)}
+                </Text>
+              </Pressable>
+            );
 
-            const onPress = () => {
-              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
-
+            if (!nativeGlass) {
+              return <View key={route.key} style={styles.cellWrap}>{item}</View>;
+            }
             return (
               <GlassView
                 key={route.key}
-                isInteractive={true}
+                isInteractive
                 colorScheme="light"
-                glassEffectStyle={isFocused ? INDICATOR.active : INDICATOR.inactive}
-                style={styles.item}
+                glassEffectStyle={
+                  isFocused
+                    ? { style: 'clear', animate: true, animationDuration: 0.35 }
+                    : { style: 'none', animate: true, animationDuration: 0.35 }
+                }
+                style={styles.cellWrap}
               >
-                <Pressable onPress={onPress} style={styles.itemInner}>
-                  <View style={styles.tabInner}>
-                    {options.tabBarIcon
-                      ? options.tabBarIcon({ focused: isFocused, color: iconColor(isFocused), size: isCenter(index) ? 26 : 22 })
-                      : <Ionicons name="ellipse-outline" size={22} color={iconColor(isFocused)} />}
-                    <Text style={[styles.tabLabel, isFocused ? styles.focusText : styles.blurText]}>{label}</Text>
-                  </View>
-                </Pressable>
+                {item}
               </GlassView>
             );
           })}
-        </GlassContainer>
-      ) : (
-        // 回退：纯色轨道 + 半透明选中块
-        <View style={styles.container}>
-          {state.routes.map((route, index) => {
-            const isFocused = state.index === index;
-            const { options } = descriptors[route.key];
-            const rawLabel = options.tabBarLabel ?? options.title ?? route.name;
-            const label = typeof rawLabel === 'string' ? rawLabel : route.name;
-
-            const onPress = () => {
-              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
-
-            return (
-              <View key={route.key} style={[styles.item, isFocused && styles.fallbackItem]}>
-                <Pressable onPress={onPress} style={styles.itemInner}>
-                  <View style={styles.tabInner}>
-                    {options.tabBarIcon
-                      ? options.tabBarIcon({ focused: isFocused, color: iconColor(isFocused), size: isCenter(index) ? 26 : 22 })
-                      : <Ionicons name="ellipse-outline" size={22} color={iconColor(isFocused)} />}
-                    <Text style={[styles.tabLabel, isFocused ? styles.focusText : styles.blurText]}>{label}</Text>
-                  </View>
-                </Pressable>
-              </View>
-            );
-          })}
         </View>
-      )}
+      </View>
     </View>
   );
 }
@@ -105,65 +91,64 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
   },
-  glassBackdrop: {
-    position: 'absolute',
-    bottom: 0,
-    width: '86%',
-    maxWidth: 360,
-    height: 76,
+  // 椭圆形框的定位容器，垫底与玻璃条共用同一坐标
+  base: {
+    width: BAR_WIDTH,
+    maxWidth: MAX_WIDTH,
+    height: BAR_HEIGHT,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.55)',
+    alignItems: 'stretch',
+  },
+  bar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  // 非玻璃（Android / 低版本 iOS）：灰白色实底椭圆框
+  barPlain: {
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(220,233,226,0.9)',
+    shadowColor: '#6cab88',
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 14,
+  },
+  // 玻璃版本：框体直接带白色底，三个玻璃按钮浮在其上
+  barGlass: {
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(214,228,221,0.9)',
     shadowColor: '#6cab88',
     shadowOpacity: 0.2,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
   },
-  // 玻璃版本：容器只负责布局，液态外观来自聚合的子 GlassView
-  // 非玻璃版本：容器提供整条轨道的底色
-  container: {
-    flexDirection: 'row',
-    width: '86%',
-    maxWidth: 360,
-    height: 76,
-    backgroundColor: nativeGlass ? 'transparent' : 'rgba(255,255,255,0.92)',
-    borderRadius: 999,
-    borderWidth: nativeGlass ? 0 : StyleSheet.hairlineWidth,
-    borderColor: 'rgba(220,233,226,0.9)',
-    shadowColor: '#6cab88',
-    shadowOpacity: nativeGlass ? 0 : 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 14,
-    overflow: 'hidden',
-  },
-  item: {
+  cellWrap: {
     flex: 1,
     borderRadius: 999,
-    margin: 5,
-    justifyContent: 'center',
   },
-  fallbackItem: {
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.85)',
-  },
-  itemInner: {
+  cell: {
     flex: 1,
-    justifyContent: 'center',
-  },
-  tabInner: {
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
   },
-  tabLabel: {
+  cellPressed: {
+    backgroundColor: 'rgba(15,92,63,0.06)',
+  },
+  label: {
     fontSize: 12,
     fontWeight: '700',
   },
-  focusText: {
+  labelOn: {
     color: '#0f5c3f',
   },
-  blurText: {
+  labelOff: {
     color: '#667981',
   },
 });

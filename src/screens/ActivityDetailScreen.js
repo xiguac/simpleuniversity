@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useAuth } from '../context/AuthContext';
 import { buildPuHeaders } from '../api/puApi';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -163,6 +164,7 @@ export default function ActivityDetailScreen({ route }) {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingTop: headerHeight + 20 }]}>
         <View style={styles.heroCard}>
+          <GlassFill radius={22} />
           <UniversalImage uri={baseInfo.logo} style={styles.detailLogo} />
           <View style={styles.headerRight}>
             <Text style={styles.detailTitle}>{baseInfo.name}</Text>
@@ -179,6 +181,7 @@ export default function ActivityDetailScreen({ route }) {
         {detail ? (
           <>
             <View style={styles.contentCard}>
+              <GlassFill radius={25} />
               <View style={styles.infoRow}>
                 <Ionicons name="time-outline" size={18} color="#2ecc71" />
                 <View style={styles.infoTextContainer}>
@@ -218,6 +221,7 @@ export default function ActivityDetailScreen({ route }) {
 
       {detail ? (
         <View style={styles.bottomBar}>
+          <GlassFill isInteractive={false} />
           <TouchableOpacity
             style={[styles.joinBtn, isJoined && styles.cancelBtn, !isJoined && (isEnded || isFull) && styles.joinBtnDisabled]}
             onPress={isJoined ? handleCancel : handleJoin}
@@ -243,10 +247,11 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 20, paddingBottom: 150 },
   heroCard: {
     flexDirection: 'row',
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white',
     borderRadius: 22,
     padding: 12,
     marginBottom: 24,
+    overflow: 'hidden',
   },
   detailLogo: {
     width: 100,
@@ -269,9 +274,10 @@ const styles = StyleSheet.create({
   creditText: { color: '#e67e22', fontWeight: 'bold', fontSize: 14 },
   registeredCount: { color: '#95a5a6', fontSize: 13 },
   contentCard: {
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white',
     borderRadius: 25,
     padding: 20,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 10,
@@ -288,7 +294,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     width: '100%',
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.35)' : 'white',
     padding: 20,
     paddingBottom: Platform.OS === 'ios' ? 35 : 20,
     elevation: 20,

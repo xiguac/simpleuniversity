@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useActivityOverlay } from '../context/ActivityOverlayContext';
 import { buildPuHeaders } from '../api/puApi';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -63,6 +64,7 @@ function TribeEventCard({ item, onOpen }) {
   return (
     <View ref={cardRef} collapsable={false} style={styles.eventWrap}>
       <Pressable style={styles.eventCard} onPress={handlePress}>
+        <GlassFill radius={22} />
         <UniversalImage uri={item.logo} style={styles.eventLogo} radius={15} />
         <View style={styles.eventInfo}>
           <Text ref={titleRef} style={styles.eventTitle} numberOfLines={2}>{item.name}</Text>
@@ -167,7 +169,7 @@ export default function TribeDetailScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white' },
+  container: { flex: 1, backgroundColor: nativeGlass ? '#f4f7f6' : 'white' },
   listContent: { paddingBottom: 40, paddingHorizontal: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { alignItems: 'center', padding: 30, backgroundColor: 'white', borderBottomWidth: 10, borderBottomColor: '#f4f7f6', marginHorizontal: -20 },
@@ -175,14 +177,14 @@ const styles = StyleSheet.create({
   name: { fontSize: 22, fontWeight: 'bold', marginTop: 15 },
   typeTag: { backgroundColor: '#e8f8f0', color: '#2ecc71', padding: 6, borderRadius: 8, marginTop: 10, fontSize: 12, fontWeight: 'bold' },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginVertical: 15 },
-  eventWrap: { marginBottom: 15, backgroundColor: 'white', borderRadius: 22 },
+  eventWrap: { marginBottom: 15, backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', borderRadius: 22, overflow: 'hidden' },
   eventCard: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderRadius: 22,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#f1f2f6',
+    borderColor: nativeGlass ? 'rgba(255,255,255,0.6)' : '#f1f2f6',
     elevation: 2,
   },
   eventLogo: { width: 100, height: 100 },
@@ -193,7 +195,7 @@ const styles = StyleSheet.create({
   eventTime: { color: '#7f8c8d', marginLeft: 6, fontSize: 12 },
   eventCredit: { color: '#e67e22', marginLeft: 6, fontSize: 12, fontWeight: 'bold' },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  statusTag: { backgroundColor: '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  statusTag: { backgroundColor: nativeGlass ? 'rgba(255,255,255,0.6)' : '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 11, color: '#95a5a6' },
   countText: { fontSize: 11, color: '#95a5a6' },
 });

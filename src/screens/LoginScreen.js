@@ -17,6 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 
 const { width } = Dimensions.get('window');
 
@@ -161,6 +162,7 @@ export default function LoginScreen({ onLogin }) {
           bounces={false}
         >
         <View style={styles.loginCard}>
+          <GlassFill radius={30} />
           <Text style={styles.loginHeader}>简校园</Text>
           <Text style={styles.loginSubHeader}>Simple University</Text>
 
@@ -281,8 +283,9 @@ const styles = StyleSheet.create({
   },
   loginCard: {
     width: width * 0.85,
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.5)' : 'white',
     borderRadius: 30,
+    overflow: 'hidden',
     padding: 30,
     elevation: 10,
     shadowColor: '#000',
@@ -304,7 +307,7 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   inputBox: {
-    backgroundColor: '#f5f6fa',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.55)' : '#f5f6fa',
     borderRadius: 15,
     paddingHorizontal: 15,
     height: 55,

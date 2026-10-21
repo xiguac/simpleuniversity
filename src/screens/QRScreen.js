@@ -3,6 +3,7 @@ import { ActivityIndicator, Animated, Dimensions, Easing, Platform, StyleSheet, 
 import { useFocusEffect } from '@react-navigation/native';
 import * as Brightness from 'expo-brightness';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
+import GlassFill, { nativeGlass } from '../ui/GlassFill';
 import QRCode from 'react-native-qrcode-svg';
 import CryptoJS from 'crypto-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -151,6 +152,7 @@ export default function QRScreen() {
   return (
     <View style={styles.center}>
       <View style={styles.qrCard}>
+        <GlassFill radius={35} />
         <View style={styles.header}>
           <Text style={styles.qrTitle}>身份码</Text>
         </View>
@@ -212,10 +214,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f7f6' },
   qrCard: {
     width: width * 0.85,
-    backgroundColor: 'white',
+    backgroundColor: nativeGlass ? 'rgba(255,255,255,0.5)' : 'white',
     borderRadius: 35,
     padding: 30,
     alignItems: 'center',
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.1,
