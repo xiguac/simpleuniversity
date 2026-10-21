@@ -14,9 +14,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
+
+// 记住登录信息的存储键
+// 密码等敏感信息用 expo-secure-store（iOS Keychain / Android Keystore 加密）
+const REMEMBER_KEY = 'su_login_remember';
 
 export default function LoginScreen({ onLogin }) {
   const insets = useSafeAreaInsets();
@@ -29,6 +34,35 @@ export default function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isFetchingSchools, setIsFetchingSchools] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    // 恢复"记住"的登录信息（expo-secure-store：iOS Keychain / Android Keystore 加密存储）
+    (async () => {
+      try {
+        if (Platform.OS === 'web') {
+          return;
+        }
+        const raw = await SecureStore.getItemAsync(REMEMBER_KEY);
+        if (!raw) {
+          return;
+        }
+        const saved = JSON.parse(raw);
+        if (saved.school?.go_id) {
+          setSelectedSchool(saved.school);
+        }
+        if (saved.username) {
+          setUsername(saved.username);
+        }
+        if (saved.password) {
+          setPassword(saved.password);
+        }
+        setRememberMe(true);
+      } catch (error) {
+        console.error('Failed to restore login info:', error);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     fetch('https://pocketuni.net/index.php?app=api&mod=Sitelist&act=getSchools')
@@ -85,6 +119,21 @@ export default function LoginScreen({ onLogin }) {
 
       const resJson = await response.json();
       if (resJson.code === 0) {
+        // 按勾选状态保存/清除"记住的登录信息"（iOS Keychain / Android Keystore 加密）
+        if (Platform.OS !== 'web') {
+          try {
+            if (rememberMe) {
+              await SecureStore.setItemAsync(
+                REMEMBER_KEY,
+                JSON.stringify({ school: selectedSchool, username, password })
+              );
+            } else {
+              await SecureStore.deleteItemAsync(REMEMBER_KEY);
+            }
+          } catch (storeError) {
+            console.error('Failed to save login info:', storeError);
+          }
+        }
         onLogin(resJson.data);
       } else {
         Alert.alert('登录失败', resJson.message || '账号或密码错误');
@@ -135,6 +184,15 @@ export default function LoginScreen({ onLogin }) {
               placeholderTextColor="#999"
             />
           </View>
+
+          <TouchableOpacity style={styles.rememberRow} activeOpacity={0.7} onPress={() => setRememberMe((v) => !v)}>
+            <Ionicons
+              name={rememberMe ? 'checkbox' : 'square-outline'}
+              size={20}
+              color={rememberMe ? '#2ecc71' : '#b2bec3'}
+            />
+            <Text style={styles.rememberText}>记住学校、账号与密码</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.loginBtn, isLoggingIn && { backgroundColor: '#7edfa5' }]}
@@ -248,6 +306,19 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#333',
+  },
+  rememberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: -6,
+    marginBottom: 8,
+    paddingVertical: 6,
+  },
+  rememberText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#61707a',
   },
   loginBtn: {
     backgroundColor: '#2ecc71',

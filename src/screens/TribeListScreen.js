@@ -3,6 +3,7 @@ import { buildPuHeaders } from '../api/puApi';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useAuth } from '../context/AuthContext';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
@@ -34,6 +35,7 @@ export default function TribeListScreen({ navigation }) {
   const [tribes, setTribes] = useState([]);
   const [loading, setLoading] = useState(true);
   const { authFetchJson } = useAuth();
+  const headerHeight = useHeaderHeight();
 
   useEffect(() => {
     (async () => {
@@ -67,7 +69,7 @@ export default function TribeListScreen({ navigation }) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: headerHeight }]}>
       <FlatList
         data={tribes}
         contentContainerStyle={{ paddingVertical: 10, paddingBottom: 30 }}

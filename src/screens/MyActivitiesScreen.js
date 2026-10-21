@@ -127,7 +127,7 @@ export default function MyActivitiesScreen() {
   }, [activeTab]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: headerHeight }]}>
       <View style={[styles.tabBarWrap, { paddingTop: 8 }]}>
         <View style={styles.tabBar}>
           {TABS.map((tab) => {

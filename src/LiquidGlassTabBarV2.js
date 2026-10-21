@@ -1,84 +1,96 @@
 import React from 'react';
-import { DynamicColorIOS, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { GlassContainer, GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const TRACK_STYLE = 'regular';
-const ACTIVE_STYLE = 'clear';
+// 严格按官方 expo-glass-effect 文档实现（docs.expo.dev/versions/v57.0.0/sdk/glass-effect/）：
+// 1. 多个玻璃元素必须放进 GlassContainer，spacing 控制它们"聚合"成一个整体液态玻璃
+// 2. 选中态切换用 glassEffectStyle={{ style, animate: true, animationDuration }} 的
+//    原生形变动画（'clear' ↔ 'none'），这是官方文档推荐的、不经 opacity 的动画方式
+// 3. 每个可点元素 isInteractive，获得系统液态玻璃的按压反馈
+// 4. 低版本 iOS / Android 回退为纯 View 实现，视觉逻辑一致
+const nativeGlass = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
 
-function supportsNativeGlass() {
-  return Platform.OS === 'ios' && isGlassEffectAPIAvailable();
-}
+const INDICATOR = {
+  active: { style: 'clear', animate: true, animationDuration: 0.35 },
+  inactive: { style: 'none', animate: true, animationDuration: 0.35 },
+};
 
-function GlassTrack({ style }) {
-  return <GlassView style={style} glassEffectStyle={TRACK_STYLE} tintColor="rgba(255,255,255,0.06)" />;
-}
-
-export default function LiquidGlassTabBarV2({ state, descriptors, navigation }) {
+export default function LiquidGlassTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
-  const canUseGlass = supportsNativeGlass();
-  const tabColor = Platform.OS === 'ios'
-    ? DynamicColorIOS({ light: '#111111', dark: '#ffffff' })
-    : '#17392d';
-  const inactiveColor = Platform.OS === 'ios'
-    ? DynamicColorIOS({ light: '#5f6b73', dark: '#d2d8dd' })
-    : '#667981';
+  const isCenter = (index) => state.routes.length > 1 && index === Math.floor(state.routes.length / 2);
+  const iconColor = (focused) => (focused ? styles.focusText.color : styles.blurText.color);
 
   return (
-    <View pointerEvents="box-none" style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-      <View style={styles.shell}>
-        {canUseGlass ? <GlassTrack style={styles.trackGlass} /> : <View style={styles.fallbackTrack} />}
-        <View style={styles.trackStroke} pointerEvents="none" />
-
-        <View style={styles.tabRow}>
+    <View pointerEvents="box-none" style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      {nativeGlass ? (
+        // 官方模式：GlassContainer 把每块玻璃合成一个整体
+        <GlassContainer spacing={6} style={styles.container}>
           {state.routes.map((route, index) => {
             const isFocused = state.index === index;
             const { options } = descriptors[route.key];
             const rawLabel = options.tabBarLabel ?? options.title ?? route.name;
             const label = typeof rawLabel === 'string' ? rawLabel : route.name;
-            const color = isFocused ? tabColor : inactiveColor;
-            const icon = options.tabBarIcon
-              ? options.tabBarIcon({ focused: isFocused, color, size: index === 1 ? 26 : 22 })
-              : <Ionicons name="ellipse-outline" size={22} color={color} />;
 
             const onPress = () => {
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
               if (!isFocused && !event.defaultPrevented) {
                 navigation.navigate(route.name);
               }
             };
 
             return (
-              <Pressable
+              <GlassView
                 key={route.key}
-                accessibilityRole="button"
-                accessibilityState={isFocused ? { selected: true } : {}}
-                onPress={onPress}
-                style={[styles.tabButton, index === 1 && styles.centerButton]}
+                isInteractive={true}
+                colorScheme="light"
+                glassEffectStyle={isFocused ? INDICATOR.active : INDICATOR.inactive}
+                style={styles.item}
               >
-                {isFocused ? (
-                  canUseGlass ? (
-                    <GlassView style={styles.activeGlass} glassEffectStyle={ACTIVE_STYLE} tintColor="rgba(255,255,255,0.03)" />
-                  ) : (
-                    <View style={styles.activeFallback} />
-                  )
-                ) : null}
+                <Pressable onPress={onPress} style={styles.itemInner}>
+                  <View style={styles.tabInner}>
+                    {options.tabBarIcon
+                      ? options.tabBarIcon({ focused: isFocused, color: iconColor(isFocused), size: isCenter(index) ? 26 : 22 })
+                      : <Ionicons name="ellipse-outline" size={22} color={iconColor(isFocused)} />}
+                    <Text style={[styles.tabLabel, isFocused ? styles.focusText : styles.blurText]}>{label}</Text>
+                  </View>
+                </Pressable>
+              </GlassView>
+            );
+          })}
+        </GlassContainer>
+      ) : (
+        // 回退：纯色轨道 + 半透明选中块
+        <View style={styles.container}>
+          {state.routes.map((route, index) => {
+            const isFocused = state.index === index;
+            const { options } = descriptors[route.key];
+            const rawLabel = options.tabBarLabel ?? options.title ?? route.name;
+            const label = typeof rawLabel === 'string' ? rawLabel : route.name;
 
-                <View style={styles.tabInner}>
-                  {icon}
-                  <Text style={[styles.tabLabel, { color }]}>{label}</Text>
-                </View>
-              </Pressable>
+            const onPress = () => {
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            };
+
+            return (
+              <View key={route.key} style={[styles.item, isFocused && styles.fallbackItem]}>
+                <Pressable onPress={onPress} style={styles.itemInner}>
+                  <View style={styles.tabInner}>
+                    {options.tabBarIcon
+                      ? options.tabBarIcon({ focused: isFocused, color: iconColor(isFocused), size: isCenter(index) ? 26 : 22 })
+                      : <Ionicons name="ellipse-outline" size={22} color={iconColor(isFocused)} />}
+                    <Text style={[styles.tabLabel, isFocused ? styles.focusText : styles.blurText]}>{label}</Text>
+                  </View>
+                </Pressable>
+              </View>
             );
           })}
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -91,79 +103,52 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
   },
-  shell: {
+  // 玻璃版本：容器只负责布局，液态外观来自聚合的子 GlassView
+  // 非玻璃版本：容器提供整条轨道的底色
+  container: {
+    flexDirection: 'row',
     width: '86%',
     maxWidth: 360,
-    minHeight: 74,
+    minHeight: 76,
+    backgroundColor: nativeGlass ? 'transparent' : 'rgba(255,255,255,0.92)',
     borderRadius: 999,
-    justifyContent: 'center',
-  },
-  trackGlass: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-  },
-  fallbackTrack: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.84)',
-    overflow: 'hidden',
+    borderWidth: nativeGlass ? 0 : StyleSheet.hairlineWidth,
+    borderColor: 'rgba(220,233,226,0.9)',
     shadowColor: '#6cab88',
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 16,
+    shadowOpacity: nativeGlass ? 0 : 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 14,
+    overflow: 'hidden',
   },
-  trackStroke: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.34)',
-  },
-  tabRow: {
-    minHeight: 74,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  tabButton: {
+  item: {
     flex: 1,
-    minHeight: 62,
-    alignItems: 'center',
+    borderRadius: 999,
+    margin: 5,
     justifyContent: 'center',
-    marginHorizontal: 2,
   },
-  centerButton: {
-    flex: 1.08,
-  },
-  activeGlass: {
-    position: 'absolute',
-    left: 2,
-    right: 2,
-    top: 2,
-    bottom: 2,
-    borderRadius: 999,
-  },
-  activeFallback: {
-    position: 'absolute',
-    left: 2,
-    right: 2,
-    top: 2,
-    bottom: 2,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.52)',
+  fallbackItem: {
+    backgroundColor: 'rgba(255,255,255,0.85)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.75)',
+    borderColor: 'rgba(255,255,255,0.85)',
+  },
+  itemInner: {
+    flex: 1,
+    justifyContent: 'center',
   },
   tabInner: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingTop: 2,
   },
   tabLabel: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  focusText: {
+    color: '#0f5c3f',
+  },
+  blurText: {
+    color: '#667981',
   },
 });

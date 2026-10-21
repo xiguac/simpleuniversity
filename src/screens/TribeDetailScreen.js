@@ -140,7 +140,7 @@ export default function TribeDetailScreen({ route }) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: headerHeight }]}>
       <FlatList
         data={events}
         keyExtractor={(item) => String(item.id)}

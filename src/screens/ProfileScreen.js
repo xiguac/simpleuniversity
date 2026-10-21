@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { buildPuHeaders } from '../api/puApi';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
@@ -112,6 +112,23 @@ export default function ProfileScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color="#ccc" />
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.listCard}
+          activeOpacity={0.7}
+          onPress={() => Linking.openURL('https://github.com/xiguac/simpleuniversity')}
+        >
+          <View style={styles.listLeft}>
+            <View style={[styles.listIconBg, { backgroundColor: '#f2f0fa' }]}>
+              <Ionicons name="logo-github" size={20} color="#7d6ee0" />
+            </View>
+            <View>
+              <Text style={styles.listCardText}>开源地址</Text>
+              <Text style={styles.listCardSub}>xiguac/simpleuniversity</Text>
+            </View>
+          </View>
+          <Ionicons name="open-outline" size={18} color="#ccc" />
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -172,4 +189,5 @@ const styles = StyleSheet.create({
   listLeft: { flexDirection: 'row', alignItems: 'center' },
   listIconBg: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   listCardText: { fontSize: 16, fontWeight: '600', color: '#2c3e50' },
+  listCardSub: { fontSize: 12, color: '#95a5a6', marginTop: 2 },
 });

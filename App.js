@@ -1,9 +1,10 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, StyleSheet, ToastAndroid, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Platform, StyleSheet, ToastAndroid, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { CardStyleInterpolators, createStackNavigator, TransitionSpecs } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -20,7 +21,9 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ActivityOverlayProvider, ActivityNavigationBridge } from './src/context/ActivityOverlayContext';
 
 const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
+// native-stack：页面切换和手势由原生（react-native-screens）驱动，
+// 动画不占 JS 线程，列表再重过渡也不会掉帧
+const Stack = createNativeStackNavigator();
 
 // Android 返回键统一处理：
 // 1. 导航栈内有页面 → 正常返回
@@ -29,6 +32,9 @@ function BackHandlerBridge({ navigationRef }) {
   const lastBackPressRef = useRef(0);
 
   useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return undefined;
+    }
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (navigationRef.current?.canGoBack()) {
         return false;
@@ -86,6 +92,46 @@ function MainTabs() {
   );
 }
 
+// iOS 26 Liquid Glass 头部背景：内容从半透明玻璃下穿过；
+// 低版本 iOS / Android 自动退回纯色，双端视觉统一。
+class GlobalErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    // 把真实调用栈打到 Metro 日志，方便定位红屏问题
+    console.error('BOUNDARY_MSG', String(error && error.message));
+    console.error('BOUNDARY_STACK', String(error && error.stack).split('\n').slice(0, 15).join(' | '));
+    console.error('BOUNDARY_COMP', String(error && error.componentStack || (info && info.componentStack)).split('\n').slice(0, 12).join(' | '));
+  }
+
+  render() {
+    if (this.state.error) {
+      return <View style={{ flex: 1 }} />;
+    }
+    return this.props.children;
+  }
+}
+
+function LiquidGlassHeaderBackground() {
+  if (Platform.OS === 'ios' && isGlassEffectAPIAvailable()) {
+    return (
+      <GlassView
+        style={StyleSheet.absoluteFill}
+        glassEffectStyle="regular"
+        tintColor="rgba(244,247,246,0.82)"
+      />
+    );
+  }
+  return <View style={[StyleSheet.absoluteFill, { backgroundColor: '#f4f7f6ee' }]} />;
+}
+
 function AppShell() {
   const { isLoggedIn, setIsLoggedIn } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -137,47 +183,21 @@ function AppShell() {
           <Stack.Navigator
             screenOptions={{
               headerTintColor: '#20323a',
-              headerBackTitleVisible: true,
               headerBackTitle: '返回',
               headerShadowVisible: false,
+              headerTransparent: true,
+              headerBackground: () => <LiquidGlassHeaderBackground />,
               gestureEnabled: true,
-              cardStyle: { backgroundColor: '#f4f7f6' },
+              contentStyle: { backgroundColor: '#f4f7f6' },
+              // native-stack 原生水平滑入（等效原 forHorizontalIOS 的观感）
+              animation: 'slide_from_right',
             }}
           >
             <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false, title: '返回' }} />
             <Stack.Screen name="MyActivities" component={MyActivitiesScreen} options={{ title: '我的活动' }} />
             <Stack.Screen name="TribeList" component={TribeListScreen} options={{ title: '我的部落' }} />
-            <Stack.Screen
-              name="TribeDetail"
-              component={TribeDetailScreen}
-              options={{
-                title: '部落详情',
-                animationEnabled: true,
-                gestureDirection: 'horizontal',
-                cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
-                transitionSpec: {
-                  open: TransitionSpecs.TransitionIOSSpec,
-                  close: TransitionSpecs.TransitionIOSSpec,
-                },
-              }}
-            />
-            <Stack.Screen
-              name="ActivityDetail"
-              component={ActivityDetailScreen}
-              options={{
-                title: '活动详情',
-                gestureEnabled: true,
-                cardStyle: { backgroundColor: '#f4f7f6' },
-                // 普通过渡动画：水平滑入（与部落详情一致）
-                animationEnabled: true,
-                gestureDirection: 'horizontal',
-                cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
-                transitionSpec: {
-                  open: TransitionSpecs.TransitionIOSSpec,
-                  close: TransitionSpecs.TransitionIOSSpec,
-                },
-              }}
-            />
+            <Stack.Screen name="TribeDetail" component={TribeDetailScreen} options={{ title: '部落详情' }} />
+            <Stack.Screen name="ActivityDetail" component={ActivityDetailScreen} options={{ title: '活动详情' }} />
           </Stack.Navigator>
         ) : (
           <LoginScreen onLogin={handleLogin} />
@@ -190,9 +210,11 @@ function AppShell() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
+      <GlobalErrorBoundary>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </GlobalErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -202,6 +224,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f4f7f6',
   },
 });
 

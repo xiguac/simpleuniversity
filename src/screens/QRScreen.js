@@ -1,12 +1,14 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Dimensions, Easing, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Dimensions, Easing, Platform, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Brightness from 'expo-brightness';
+import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import QRCode from 'react-native-qrcode-svg';
 import CryptoJS from 'crypto-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
+const GLASS = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
 
 export default function QRScreen() {
   const [qrValue, setQrValue] = useState('LOADING');
@@ -191,9 +193,17 @@ export default function QRScreen() {
         </View>
       </View>
 
-      <View style={styles.tipsBox}>
-        <Text style={styles.tipsText}>提示：进入页面时已自动调高亮度，离开后会恢复</Text>
-      </View>
+      {GLASS ? (
+        <View style={[styles.tipsBox, { backgroundColor: 'transparent' }]}>
+          <GlassView style={styles.tipsGlass} glassEffectStyle="regular" tintColor="rgba(232,248,240,0.45)">
+            <Text style={styles.tipsText}>提示：进入页面时已自动调高亮度，离开后会恢复</Text>
+          </GlassView>
+        </View>
+      ) : (
+        <View style={styles.tipsBox}>
+          <Text style={styles.tipsText}>提示：进入页面时已自动调高亮度，离开后会恢复</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -228,5 +238,6 @@ const styles = StyleSheet.create({
   timerText: { color: '#7f8c8d', fontSize: 14 },
   secondsText: { color: '#2ecc71', fontWeight: 'bold', fontSize: 18 },
   tipsBox: { marginTop: 30, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#e8f8f0', borderRadius: 20 },
+  tipsGlass: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
   tipsText: { color: '#27ae60', fontSize: 13, fontWeight: '500' },
 });

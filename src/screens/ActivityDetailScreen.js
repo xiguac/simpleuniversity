@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { useAuth } from '../context/AuthContext';
 import { buildPuHeaders } from '../api/puApi';
 
@@ -26,6 +27,7 @@ const UniversalImage = ({ uri, style }) => {
 
 export default function ActivityDetailScreen({ route }) {
   const { activityId, previewItem } = route.params;
+  const headerHeight = useHeaderHeight();
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
@@ -159,7 +161,7 @@ export default function ActivityDetailScreen({ route }) {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingTop: headerHeight + 20 }]}>
         <View style={styles.heroCard}>
           <UniversalImage uri={baseInfo.logo} style={styles.detailLogo} />
           <View style={styles.headerRight}>
