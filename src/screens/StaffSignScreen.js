@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -21,6 +20,7 @@ import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera'
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
+import Animated, { FadeIn, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useAuth } from '../context/AuthContext';
 import GlassFill, { nativeGlass } from '../ui/GlassFill';
 import {
@@ -42,6 +42,9 @@ import {
   parseUserBookJson,
   removeUserFromBook,
 } from '../utils/userBook';
+
+const SECTION_LAYOUT = LinearTransition.duration(180);
+const SECTION_ENTER = FadeIn.duration(140);
 
 const MODES = [
   { key: 'in', label: '签到' },
@@ -78,6 +81,18 @@ export default function StaffSignScreen() {
   const [groupMembers, setGroupMembers] = useState(() => new Set());
   const [savingGroup, setSavingGroup] = useState(false);
   const [bookExpanded, setBookExpanded] = useState(false);
+  const bookHeight = useSharedValue(0);
+  const bookProgress = useSharedValue(0);
+  useEffect(() => {
+    bookProgress.value = withTiming(bookExpanded ? 1 : 0, { duration: 180 });
+  }, [bookExpanded, bookProgress]);
+  const bookBodyStyle = useAnimatedStyle(() => ({
+    height: bookHeight.value * bookProgress.value,
+    opacity: bookProgress.value,
+  }));
+  const bookArrowStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${bookProgress.value * 180}deg` }],
+  }));
   const [exportText, setExportText] = useState('');
   const [copied, setCopied] = useState(false);
   const [query, setQuery] = useState('');
@@ -116,7 +131,6 @@ export default function StaffSignScreen() {
 
   const chooseGroup = (group) => {
     if (busy) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelectedGroup(group?.name ?? null);
     setSelectedIds(new Set(group ? book.filter((user) => group.userIds.includes(user.id)).map((user) => user.id) : []));
     setBatchMode(!!group);
@@ -394,7 +408,6 @@ export default function StaffSignScreen() {
           try {
             const merged = await mergeUserBook(users, importedGroups);
             setGroups((await loadUserBookData()).groups);
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setBook(merged);
             setBookExpanded(true);
             setPasteOpen(false);
@@ -521,7 +534,6 @@ export default function StaffSignScreen() {
 
   const handleExport = useCallback(() => {
     if (!currentUser) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExportText(JSON.stringify(buildExportPayload([currentUser]), null, 2));
     setCopied(false);
   }, [currentUser]);
@@ -555,7 +567,7 @@ export default function StaffSignScreen() {
             disabled={busy}
           >
             <View style={styles.selectorLeft}>
-              <Ionicons name="calendar-outline" size={18} color="#087f5b" />
+              <Ionicons name="calendar-outline" size={18} color="#2ecc71" />
               <View style={{ marginLeft: 10, flex: 1 }}>
                 <Text style={styles.selectorLabel}>选择活动</Text>
                 <Text style={styles.selectorValue} numberOfLines={1}>
@@ -563,7 +575,7 @@ export default function StaffSignScreen() {
                 </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#7a8b84" />
+            <Ionicons name="chevron-forward" size={18} color="#b2c0c6" />
           </TouchableOpacity>
 
           <View style={styles.modeRow}>
@@ -575,7 +587,7 @@ export default function StaffSignScreen() {
                   style={[styles.modeBtn, active && styles.modeBtnActive]}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: active }}
-                  onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setMode(item.key); }}
+                  onPress={() => setMode(item.key)}
                   disabled={busy}
                   activeOpacity={0.8}
                 >
@@ -591,7 +603,7 @@ export default function StaffSignScreen() {
               <Text style={styles.primaryBtnText}>扫码{ mode === 'out' ? '签退' : '签到'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={pickFromGallery} disabled={busy} activeOpacity={0.85}>
-              <Ionicons name="image-outline" size={20} color="#087f5b" />
+              <Ionicons name="image-outline" size={20} color="#2ecc71" />
               <Text style={styles.secondaryBtnText}>从相册选择</Text>
             </TouchableOpacity>
           </View>
@@ -602,7 +614,7 @@ export default function StaffSignScreen() {
         </View>
 
         {/* 个人信息 */}
-        <View style={styles.card}>
+        <Animated.View layout={SECTION_LAYOUT} style={styles.card}>
           <GlassFill radius={18} />
           <Text style={styles.cardTitle}>导出我的信息</Text>
           <Text style={styles.hint}>复制个人信息，发给签到方导入用户库。</Text>
@@ -611,7 +623,7 @@ export default function StaffSignScreen() {
             <Text style={styles.secondaryBtnText}>{exportText ? '重新生成 JSON' : '生成我的 JSON'}</Text>
           </TouchableOpacity>
           {exportText ? (
-            <View>
+            <Animated.View entering={SECTION_ENTER}>
               <ScrollView style={styles.codeBox} nestedScrollEnabled>
                 <Text selectable style={styles.codeText}>{exportText}</Text>
               </ScrollView>
@@ -619,9 +631,9 @@ export default function StaffSignScreen() {
                 <Ionicons name={copied ? 'checkmark-outline' : 'copy-outline'} size={18} color="white" />
                 <Text style={styles.primaryBtnText}>{copied ? '已复制到剪贴板' : '复制 JSON'}</Text>
               </TouchableOpacity>
-            </View>
+            </Animated.View>
           ) : null}
-        </View>
+        </Animated.View>
 
         {/* 用户库 */}
         <View style={styles.card}>
@@ -633,15 +645,13 @@ export default function StaffSignScreen() {
               accessibilityRole="button"
               accessibilityState={{ expanded: bookExpanded }}
               onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                 setBookExpanded((value) => !value);
               }}
             >
               <Text style={styles.cardTitle}>用户库 · {book.length}</Text>
-              <Ionicons name={bookExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#64756f" />
+              <Animated.View style={bookArrowStyle}><Ionicons name="chevron-down" size={18} color="#92a2a9" /></Animated.View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.smallBtn} disabled={busy} onPress={() => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setBookExpanded(true);
               setBatchMode((value) => !value);
               setSelectedGroup(null);
@@ -665,17 +675,17 @@ export default function StaffSignScreen() {
           </View>
           <View style={styles.groupBar}>
             <TouchableOpacity style={styles.groupSelector} disabled={busy} accessibilityLabel="选择批量操作分组" onPress={() => setGroupPicker(true)}>
-              <Ionicons name="people-outline" size={18} color="#087f5b" />
+              <Ionicons name="people-outline" size={18} color="#0f8f58" />
               <Text style={styles.groupSelectorText} numberOfLines={1}>{selectedGroup === null ? '选择分组批量操作' : selectedGroup}</Text>
-              <Ionicons name="chevron-down" size={16} color="#64756f" />
+              <Ionicons name="chevron-down" size={16} color="#92a2a9" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.manageBtn} disabled={busy} onPress={() => { setEditingGroup(null); setGroupsOpen(true); }}><Text style={styles.smallBtnText}>管理分组</Text></TouchableOpacity>
           </View>
-          {bookExpanded ? (
-            <View>
+          <Animated.View style={[styles.bookBody, bookBodyStyle]} pointerEvents={bookExpanded ? 'auto' : 'none'} accessibilityElementsHidden={!bookExpanded} importantForAccessibility={bookExpanded ? 'auto' : 'no-hide-descendants'}>
+            <View style={styles.bookBodyContent} onLayout={(event) => { bookHeight.value = event.nativeEvent.layout.height; }}>
               <View style={styles.bookSearch}>
-                <Ionicons name="search-outline" size={18} color="#64756f" />
-                <TextInput style={styles.bookSearchInput} value={query} onChangeText={setQuery} placeholder="搜索姓名、学号或 UID" placeholderTextColor="#64756f" autoCorrect={false} autoCapitalize="none" />
+                <Ionicons name="search-outline" size={18} color="#92a2a9" />
+                <TextInput style={styles.bookSearchInput} value={query} onChangeText={setQuery} placeholder="搜索姓名、学号或 UID" placeholderTextColor="#92a2a9" autoCorrect={false} autoCapitalize="none" />
               </View>
               {batchMode ? (
                 <View style={styles.batchBar}>
@@ -692,7 +702,7 @@ export default function StaffSignScreen() {
               ) : null}
               {currentUser ? (
                 <TouchableOpacity style={styles.selfRow} onPress={handleAddSelf} disabled={busy} activeOpacity={0.8}>
-                  <Ionicons name="person-add-outline" size={16} color="#64756f" />
+                  <Ionicons name="person-add-outline" size={16} color="#e67e22" />
                   <Text style={styles.selfText}>将当前账号加入用户库</Text>
                 </TouchableOpacity>
               ) : null}
@@ -725,7 +735,7 @@ export default function StaffSignScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
-          ) : null}
+          </Animated.View>
         </View>
 
         <Text style={styles.footerHint}>批量处理遇到失败会继续，完成后显示成功用户和失败原因。</Text>
@@ -737,7 +747,7 @@ export default function StaffSignScreen() {
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>{editingGroup === null ? '管理分组' : editingGroup === '' ? '新增分组' : '编辑分组'}</Text>
             {editingGroup === null ? <>
-              <TouchableOpacity style={[styles.importBtn, { flex: 0 }]} disabled={savingGroup} onPress={() => openGroupEditor()}><Ionicons name="add" size={20} color="#087f5b" /><Text style={styles.importText}>新增分组</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.importBtn, { flex: 0 }]} disabled={savingGroup} onPress={() => openGroupEditor()}><Ionicons name="add" size={20} color="#0f8f58" /><Text style={styles.importText}>新增分组</Text></TouchableOpacity>
               <ScrollView style={{ maxHeight: 360 }}>
                 {!groups.length ? <Text style={styles.emptyText}>还没有分组，新增后可勾选用户库成员。</Text> : null}
                 {groups.map((group) => <View key={group.name} style={styles.userRow}>
@@ -777,11 +787,11 @@ export default function StaffSignScreen() {
             <ScrollView style={{ maxHeight: 360 }}>
               <TouchableOpacity style={[styles.activityItem, selectedGroup === null && styles.activityItemActive]} disabled={busy} onPress={() => chooseGroup(null)}>
                 <View style={{ flex: 1 }}><Text style={styles.userName}>全部用户</Text><Text style={styles.userSub}>返回用户库，手动选择成员</Text></View>
-                {selectedGroup === null ? <Ionicons name="checkmark-circle" size={22} color="#087f5b" /> : null}
+                {selectedGroup === null ? <Ionicons name="checkmark-circle" size={22} color="#0f8f58" /> : null}
               </TouchableOpacity>
               {groups.map((group) => <TouchableOpacity key={group.name} style={[styles.activityItem, selectedGroup === group.name && styles.activityItemActive]} disabled={busy} onPress={() => chooseGroup(group)}>
                 <View style={{ flex: 1 }}><Text style={styles.userName}>{group.name}</Text><Text style={styles.userSub}>{group.userIds.length} 位成员</Text></View>
-                <Ionicons name={selectedGroup === group.name ? 'checkmark-circle' : 'chevron-forward'} size={22} color="#087f5b" />
+                <Ionicons name={selectedGroup === group.name ? 'checkmark-circle' : 'chevron-forward'} size={22} color="#0f8f58" />
               </TouchableOpacity>)}
               {!groups.length ? <Text style={styles.emptyText}>还没有分组，请在“管理分组”中新增并添加成员。</Text> : null}
             </ScrollView>
@@ -838,7 +848,7 @@ export default function StaffSignScreen() {
           <Pressable style={styles.sheet} onPress={() => {}}>
             <Text style={styles.sheetTitle}>选择活动</Text>
             {loadingActivities ? (
-              <ActivityIndicator color="#087f5b" style={{ marginVertical: 24 }} />
+              <ActivityIndicator color="#2ecc71" style={{ marginVertical: 24 }} />
             ) : activities.length === 0 ? (
               <Text style={styles.emptyText}>
                 当前账号没有可签到的活动。只有活动签到员 / 管理员才能在这里看到活动。
@@ -861,7 +871,7 @@ export default function StaffSignScreen() {
                         <Text style={styles.activityName} numberOfLines={2}>{item.name}</Text>
                         <Text style={styles.activityTime}>{fmtActivity(item)}</Text>
                       </View>
-                      {active ? <Ionicons name="checkmark-circle" size={20} color="#087f5b" /> : null}
+                      {active ? <Ionicons name="checkmark-circle" size={20} color="#2ecc71" /> : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -891,7 +901,7 @@ export default function StaffSignScreen() {
                 <QRCode value={qrValue} size={220} color="#20323a" backgroundColor="white" quietZone={8} />
               ) : (
                 <View style={styles.qrLoading}>
-                  <ActivityIndicator color="#087f5b" />
+                  <ActivityIndicator color="#2ecc71" />
                 </View>
               )}
             </View>
@@ -899,7 +909,7 @@ export default function StaffSignScreen() {
 
             <View style={styles.qrActions}>
               <TouchableOpacity
-                style={[styles.qrActionBtn, { backgroundColor: '#087f5b' }]}
+                style={[styles.qrActionBtn, { backgroundColor: '#2ecc71' }]}
                 disabled={busy}
                 onPress={() => {
                   if (!qrUser) return;
@@ -965,7 +975,7 @@ export default function StaffSignScreen() {
               value={pasteText}
               onChangeText={setPasteText}
               placeholder='{"users":[{"id":"123","username":"S001","fullProfile":{"realname":"示例用户"}}]}'
-              placeholderTextColor="#7a8b84"
+              placeholderTextColor="#b2c0c6"
               autoCapitalize="none"
               autoCorrect={false}
             />
@@ -1017,7 +1027,7 @@ const styles = StyleSheet.create({
     backgroundColor: nativeGlass ? 'rgba(255,255,255,0.5)' : 'white',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#e1e9e5',
+    borderColor: '#eef3f1',
     padding: 16,
     marginBottom: 16,
     overflow: 'hidden',
@@ -1032,7 +1042,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   selectorLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  selectorLabel: { fontSize: 12, color: '#64756f', marginBottom: 2 },
+  selectorLabel: { fontSize: 12, color: '#92a2a9', marginBottom: 2 },
   selectorValue: { fontSize: 15, fontWeight: '700', color: '#2c3e50' },
   modeRow: {
     flexDirection: 'row',
@@ -1042,13 +1052,13 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   modeBtn: { flex: 1, alignItems: 'center', minHeight: 44, justifyContent: 'center', paddingVertical: 10, borderRadius: 11 },
-  modeBtnActive: { backgroundColor: '#087f5b' },
+  modeBtnActive: { backgroundColor: 'white' },
   modeText: { fontSize: 14, fontWeight: '600', color: '#799097' },
-  modeTextActive: { color: 'white' },
+  modeTextActive: { color: '#20323a' },
   actionRow: { flexDirection: 'row', marginTop: 14, gap: 10 },
   primaryBtn: {
     flex: 1,
-    backgroundColor: '#087f5b',
+    backgroundColor: '#2ecc71',
     borderRadius: 14,
     minHeight: 48,
     paddingVertical: 13,
@@ -1069,8 +1079,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
-  secondaryBtnText: { color: '#087f5b', fontSize: 14, fontWeight: '700' },
-  hint: { marginTop: 10, fontSize: 12, color: '#64756f', lineHeight: 19 },
+  secondaryBtnText: { color: '#27ae60', fontSize: 14, fontWeight: '700' },
+  hint: { marginTop: 10, fontSize: 12, color: '#92a2a9', lineHeight: 19 },
   exportButton: { marginTop: 14, flex: 0, paddingVertical: 13 },
   bookSearch: { marginTop: 16, flexDirection: 'row', alignItems: 'center', borderRadius: 14, backgroundColor: '#f4f8f7', paddingHorizontal: 12 },
   bookSearchInput: { flex: 1, minHeight: 48, paddingVertical: 12, paddingHorizontal: 8, color: '#20323a', fontSize: 14 },
@@ -1080,7 +1090,7 @@ const styles = StyleSheet.create({
   resultError: { color: '#c0392b', fontSize: 12, lineHeight: 18, marginTop: 5 },
   codeBox: { maxHeight: 200, marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#f4f8f7' },
   codeText: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12, lineHeight: 19, color: '#34495e' },
-  bookToggle: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
+  bookToggle: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start', paddingVertical: 4 },
   bookHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   smallBtn: {
     flexDirection: 'row',
@@ -1093,7 +1103,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 8,
   },
-  smallBtnText: { color: '#087f5b', fontSize: 13, fontWeight: '700' },
+  smallBtnText: { color: '#27ae60', fontSize: 13, fontWeight: '700' },
   importRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   importBtn: {
     flex: 1,
@@ -1115,8 +1125,8 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 2,
   },
-  selfText: { fontSize: 12, color: '#64756f', fontWeight: '600', flex: 1 },
-  emptyText: { fontSize: 12, color: '#64756f', lineHeight: 19, marginTop: 14 },
+  selfText: { fontSize: 12, color: '#e67e22', fontWeight: '600', flex: 1 },
+  emptyText: { fontSize: 12, color: '#92a2a9', lineHeight: 19, marginTop: 14 },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1134,23 +1144,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: '#087f5b', fontWeight: '800', fontSize: 16 },
+  avatarText: { color: '#27ae60', fontWeight: '800', fontSize: 16 },
   userName: { fontSize: 15, fontWeight: '700', color: '#2c3e50' },
-  userSub: { fontSize: 12, color: '#64756f', marginTop: 4, lineHeight: 18 },
+  userSub: { fontSize: 12, color: '#92a2a9', marginTop: 4, lineHeight: 18 },
   removeBtn: { padding: 10, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  footerHint: { fontSize: 12, color: '#64756f', textAlign: 'center', lineHeight: 17 },
+  footerHint: { fontSize: 12, color: '#a6b4ba', textAlign: 'center', lineHeight: 17 },
+  bookBody: { overflow: 'hidden' },
+  bookBodyContent: { position: 'absolute', width: '100%' },
   groupBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
-  groupSelector: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, paddingHorizontal: 12, backgroundColor: '#edf7f2', borderRadius: 12 },
-  groupSelectorText: { flex: 1, fontSize: 13, color: '#087f5b', fontWeight: '600' },
+  groupSelector: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, paddingHorizontal: 12, backgroundColor: '#e8f8f0', borderRadius: 12 },
+  groupSelectorText: { flex: 1, fontSize: 13, color: '#0f8f58', fontWeight: '600' },
   manageBtn: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
   textButton: { minHeight: 44, justifyContent: 'center' },
-  selectionCount: { fontSize: 12, color: '#64756f' },
+  selectionCount: { fontSize: 12, color: '#92a2a9' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 },
-  tag: { fontSize: 11, color: '#087f5b', backgroundColor: '#edf7f2', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3, overflow: 'hidden' },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#d7e2dc', alignSelf: 'center', marginBottom: 18 },
+  tag: { fontSize: 11, color: '#0f8f58', backgroundColor: '#e8f8f0', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3, overflow: 'hidden' },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#b2c0c6', alignSelf: 'center', marginBottom: 18 },
   modalMask: {
     flex: 1,
-    backgroundColor: 'rgba(15,28,33,0.45)',
+    backgroundColor: "rgba(15,28,33,0.45)",
     justifyContent: 'flex-end',
     paddingHorizontal: 12,
     paddingTop: 24,
@@ -1174,7 +1186,7 @@ const styles = StyleSheet.create({
   },
   activityItemActive: { backgroundColor: '#e8f8f0' },
   activityName: { fontSize: 14, fontWeight: '700', color: '#2c3e50' },
-  activityTime: { fontSize: 11, color: '#64756f', marginTop: 4 },
+  activityTime: { fontSize: 11, color: '#92a2a9', marginTop: 4 },
   qrSheet: { backgroundColor: 'white', borderRadius: 24, padding: 20, alignItems: 'center' },
   qrWho: { fontSize: 13, color: '#7f8c8d', marginTop: -4, marginBottom: 12 },
   qrBox: {
@@ -1185,13 +1197,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
   },
   qrLoading: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
-  qrTimer: { fontSize: 12, color: '#64756f', marginTop: 10 },
+  qrTimer: { fontSize: 12, color: '#92a2a9', marginTop: 10 },
   qrActions: { flexDirection: 'row', gap: 10, marginTop: 16, alignSelf: 'stretch' },
   qrActionBtn: { flex: 1, borderRadius: 15, paddingVertical: 14, alignItems: 'center' },
   qrActionText: { color: 'white', fontSize: 14, fontWeight: '700' },
   closeBtn: { marginTop: 12, minHeight: 44, justifyContent: 'center', paddingVertical: 10, alignSelf: 'stretch', alignItems: 'center' },
-  closeBtnText: { color: '#64756f', fontSize: 14, fontWeight: '600' },
-  pasteHint: { fontSize: 11, color: '#64756f', marginBottom: 10, lineHeight: 17 },
+  closeBtnText: { color: '#92a2a9', fontSize: 14, fontWeight: '600' },
+  pasteHint: { fontSize: 11, color: '#92a2a9', marginBottom: 10, lineHeight: 17 },
   pasteInput: {
     minHeight: 150,
     maxHeight: 260,
@@ -1216,7 +1228,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 13,
     alignItems: 'center',
-    backgroundColor: '#087f5b',
+    backgroundColor: '#2ecc71',
   },
   pasteOkText: { color: 'white', fontSize: 14, fontWeight: '800' },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
@@ -1226,8 +1238,8 @@ const styles = StyleSheet.create({
     height: 250,
     borderRadius: 24,
     borderWidth: 3,
-    borderColor: 'rgba(46,204,113,0.9)',
-    backgroundColor: 'transparent',
+    borderColor: "rgba(46,204,113,0.9)",
+    backgroundColor: "transparent",
   },
   scanTip: { position: 'absolute', top: '50%', left: 24, right: 24, marginTop: 147, color: 'white', fontSize: 14, fontWeight: '600', textAlign: 'center' },
   scanClose: {
@@ -1236,7 +1248,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: 'center',
     justifyContent: 'center',
   },
