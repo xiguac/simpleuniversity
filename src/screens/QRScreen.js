@@ -1,5 +1,5 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, AppState, Dimensions, Easing, Platform, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Animated, AppState, Dimensions, Easing, Platform, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Brightness from 'expo-brightness';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
@@ -22,6 +22,43 @@ export default function QRScreen() {
   const qrScale = useRef(new Animated.Value(1)).current;
   const timerRef = useRef(null);
   const brightnessTaskRef = useRef(Promise.resolve());
+  const reduceMotionRef = useRef(false);
+  const remainingRef = useRef(QR_TTL_SECONDS);
+
+  useEffect(() => {
+    let active = true;
+    let changed = false;
+    const update = (enabled) => {
+      const wasReduced = reduceMotionRef.current;
+      reduceMotionRef.current = enabled;
+      if (enabled) {
+        progressAnim.stopAnimation();
+        qrOpacity.stopAnimation();
+        qrScale.stopAnimation();
+        qrOpacity.setValue(1);
+        qrScale.setValue(1);
+        progressAnim.setValue(remainingRef.current / QR_TTL_SECONDS);
+      } else if (wasReduced && timerRef.current) {
+        Animated.timing(progressAnim, {
+          toValue: 0,
+          duration: remainingRef.current * 1000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }).start();
+      }
+    };
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+      changed = true;
+      update(enabled);
+    });
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (active && !changed) update(enabled);
+    }).catch((error) => console.error('读取减弱动态效果设置失败', error));
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [progressAnim, qrOpacity, qrScale]);
 
   const generateEncryptedQR = useCallback(async (user) => {
     if (!user || !user.baseUserInfo) {
@@ -38,9 +75,10 @@ export default function QRScreen() {
 
   const startCountdown = useCallback((user) => {
     generateEncryptedQR(user);
+    remainingRef.current = QR_TTL_SECONDS;
     setTimeLeft(QR_TTL_SECONDS);
     progressAnim.setValue(1);
-    Animated.timing(progressAnim, {
+    if (!reduceMotionRef.current) Animated.timing(progressAnim, {
       toValue: 0,
       duration: QR_TTL_SECONDS * 1000,
       easing: Easing.linear,
@@ -49,8 +87,10 @@ export default function QRScreen() {
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
+        remainingRef.current = prev <= 1 ? QR_TTL_SECONDS : prev - 1;
         if (prev <= 1) {
-          Animated.sequence([
+          generateEncryptedQR(user);
+          if (!reduceMotionRef.current) Animated.sequence([
             Animated.parallel([
               Animated.timing(qrOpacity, {
                 toValue: 0.22,
@@ -64,8 +104,9 @@ export default function QRScreen() {
               }),
             ]),
             Animated.delay(30),
-          ]).start(() => {
-            generateEncryptedQR(user);
+          ]).start(({ finished }) => {
+            if (!finished) return;
+            if (reduceMotionRef.current) return;
             qrOpacity.setValue(0.4);
             qrScale.setValue(1.05);
             Animated.parallel([
@@ -83,7 +124,7 @@ export default function QRScreen() {
           });
 
           progressAnim.setValue(1);
-          Animated.timing(progressAnim, {
+          if (!reduceMotionRef.current) Animated.timing(progressAnim, {
             toValue: 0,
             duration: QR_TTL_SECONDS * 1000,
             easing: Easing.linear,
@@ -91,6 +132,7 @@ export default function QRScreen() {
           }).start();
           return QR_TTL_SECONDS;
         }
+        if (reduceMotionRef.current) progressAnim.setValue((prev - 1) / QR_TTL_SECONDS);
         return prev - 1;
       });
     }, 1000);
@@ -102,7 +144,9 @@ export default function QRScreen() {
       timerRef.current = null;
     }
     progressAnim.stopAnimation();
-  }, [progressAnim]);
+    qrOpacity.stopAnimation();
+    qrScale.stopAnimation();
+  }, [progressAnim, qrOpacity, qrScale]);
 
   useFocusEffect(
     useCallback(() => {
