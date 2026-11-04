@@ -5,13 +5,15 @@ import * as Brightness from 'expo-brightness';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import GlassFill, { nativeGlass } from '../ui/GlassFill';
 import QRCode from 'react-native-qrcode-svg';
-import CryptoJS from 'crypto-js';
+import { useAuth } from '../context/AuthContext';
+import { buildUserQrPlain, desEncrypt, fetchServerTimeSeconds } from '../api/puExtra';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 const GLASS = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
 
 export default function QRScreen() {
+  const { authFetchJson } = useAuth();
   const [qrValue, setQrValue] = useState('LOADING');
   const [timeLeft, setTimeLeft] = useState(10);
   const [userInfo, setUserInfo] = useState(null);
@@ -21,23 +23,18 @@ export default function QRScreen() {
   const timerRef = useRef(null);
   const originalBrightnessRef = useRef(null);
 
-  const generateEncryptedQR = useCallback((user) => {
+  const generateEncryptedQR = useCallback(async (user) => {
     if (!user || !user.baseUserInfo) {
       return;
     }
 
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    const userId = user.baseUserInfo.id.toString();
-    const username = user.baseUserInfo.username.toString();
-    const plaintext = `xyhui://user/${userId}/${timestamp}/${username}`;
-
-    const key = CryptoJS.enc.Utf8.parse('TG123!@#');
-    const encrypted = CryptoJS.DES.encrypt(plaintext, key, {
-      mode: CryptoJS.mode.ECB,
-      padding: CryptoJS.pad.Pkcs7,
-    });
-    setQrValue(encrypted.toString());
-  }, []);
+    try {
+      const timestamp = await fetchServerTimeSeconds(authFetchJson, user.token, user.baseUserInfo.sid);
+      setQrValue(desEncrypt(buildUserQrPlain(user.baseUserInfo.id, timestamp, user.baseUserInfo.username)));
+    } catch (error) {
+      console.error('身份码刷新失败', error);
+    }
+  }, [authFetchJson]);
 
   const startCountdown = useCallback((user) => {
     generateEncryptedQR(user);

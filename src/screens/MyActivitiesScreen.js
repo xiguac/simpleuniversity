@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { useActivityOverlay } from '../context/ActivityOverlayContext';
 import GlassFill, { nativeGlass } from '../ui/GlassFill';
+import { fetchActivityDetail } from '../api/puExtra';
 
 const IMAGE_HEADERS = { Referer: 'https://class.pocketuni.net/', 'User-Agent': 'Mozilla/5.0' };
 
@@ -44,7 +45,48 @@ function measureRef(ref) {
   });
 }
 
+function getSignBadge(status) {
+  if (!status) return null;
+  if (status.hasSignOut === 1) {
+    return { text: '已签退', color: '#8e44ad', bg: '#f3e8fb' };
+  }
+  if (status.hasSignIn === 1) {
+    return status.isVisibleSignOut
+      ? { text: '已签到 · 待签退', color: '#2980b9', bg: '#e8f2fb' }
+      : { text: '已签到', color: '#27ae60', bg: '#e8f8f0' };
+  }
+  if (status.hasJoin === 1) {
+    return { text: '已报名 · 未签到', color: '#e67e22', bg: '#fff3e0' };
+  }
+  return null;
+}
+
+// 列表接口不返回签到状态，按详情并发补齐（仅已报名 tab，最多 12 条）
+async function enrichSignStatus(list, authFetchJson, token, sid) {
+  const targets = list.slice(0, 12);
+  if (!targets.length) return list;
+  const map = new Map();
+  const queue = [...targets];
+  const worker = async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      try {
+        const json = await fetchActivityDetail(authFetchJson, token, sid, item.id);
+        if (json?.code === 0 && json?.data?.userStatus) {
+          map.set(String(item.id), json.data.userStatus);
+        }
+      } catch (error) {
+        if (error.code === 'AUTH_EXPIRED') throw error;
+        console.warn('获取活动签到状态失败', item.id, error);
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  return list.map((item) => (map.has(String(item.id)) ? { ...item, userStatus: map.get(String(item.id)) } : item));
+}
+
 function MyActivityCard({ item, onOpen }) {
+  const signBadge = getSignBadge(item.userStatus);
   const cardRef = useRef(null);
   const titleRef = useRef(null);
   const creditRef = useRef(null);
@@ -81,6 +123,11 @@ function MyActivityCard({ item, onOpen }) {
             </View>
             <Text ref={countRef} style={styles.countText}>已报 {item.joinUserCount || 0}/{item.allowUserCount || 0}</Text>
           </View>
+          {signBadge ? (
+            <View style={[styles.signTag, { backgroundColor: signBadge.bg }]}>
+              <Text style={[styles.signText, { color: signBadge.color }]}>{signBadge.text}</Text>
+            </View>
+          ) : null}
         </View>
       </Pressable>
     </View>
@@ -97,8 +144,10 @@ export default function MyActivitiesScreen() {
   const [activeTab, setActiveTab] = useState(TABS[0]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const requestRef = useRef(0);
 
   const fetchList = async (tab) => {
+    const requestId = ++requestRef.current;
     setLoading(true);
     try {
       const savedUser = await AsyncStorage.getItem('user_data');
@@ -110,22 +159,27 @@ export default function MyActivitiesScreen() {
       });
 
       if (json.code === 0) {
-        setItems(json.data?.list ?? []);
+        const list = json.data?.list ?? [];
+        const enriched = tab.type === 2
+          ? await enrichSignStatus(list, authFetchJson, token, baseUserInfo.sid)
+          : list;
+        if (requestId === requestRef.current) setItems(enriched);
       } else {
-        setItems([]);
+        if (requestId === requestRef.current) setItems([]);
       }
     } catch (error) {
       if (error.code !== 'AUTH_EXPIRED') {
         console.error(error);
       }
-      setItems([]);
+      if (requestId === requestRef.current) setItems([]);
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchList(activeTab);
+    return () => { requestRef.current += 1; };
   }, [activeTab]);
 
   return (
@@ -189,6 +243,8 @@ const styles = StyleSheet.create({
   statusTag: { backgroundColor: nativeGlass ? 'rgba(255,255,255,0.6)' : '#f1f2f6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   statusText: { fontSize: 11, color: '#95a5a6' },
   countText: { fontSize: 11, color: '#95a5a6' },
+  signTag: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6 },
+  signText: { fontSize: 11, fontWeight: '700' },
 });
 
 

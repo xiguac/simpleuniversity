@@ -16,6 +16,9 @@ import TribeListScreen from './src/screens/TribeListScreen';
 import TribeDetailScreen from './src/screens/TribeDetailScreen';
 import ActivityDetailScreen from './src/screens/ActivityDetailScreen';
 import MyActivitiesScreen from './src/screens/MyActivitiesScreen';
+import StaffSignScreen from './src/screens/StaffSignScreen';
+import CreditScreen from './src/screens/CreditScreen';
+import CreditDetailScreen from './src/screens/CreditDetailScreen';
 import LiquidGlassTabBar from './src/LiquidGlassTabBarV2';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { ActivityOverlayProvider, ActivityNavigationBridge } from './src/context/ActivityOverlayContext';
@@ -198,6 +201,9 @@ function AppShell() {
             <Stack.Screen name="TribeList" component={TribeListScreen} options={{ title: '我的部落' }} />
             <Stack.Screen name="TribeDetail" component={TribeDetailScreen} options={{ title: '部落详情' }} />
             <Stack.Screen name="ActivityDetail" component={ActivityDetailScreen} options={{ title: '活动详情' }} />
+            <Stack.Screen name="StaffSign" component={StaffSignScreen} options={{ title: '签到员' }} />
+            <Stack.Screen name="Credit" component={CreditScreen} options={{ title: '实践学分' }} />
+            <Stack.Screen name="CreditDetail" component={CreditDetailScreen} options={{ title: '学分明细' }} />
           </Stack.Navigator>
         ) : (
           <LoginScreen onLogin={handleLogin} />

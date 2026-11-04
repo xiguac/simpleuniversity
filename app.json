@@ -30,7 +30,20 @@
     "plugins": [
       "expo-font",
       "expo-status-bar",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许简校园使用相机扫描二维码"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许简校园访问相册以选择二维码图片"
+        }
+      ]
     ],
     "extra": {
       "eas": {

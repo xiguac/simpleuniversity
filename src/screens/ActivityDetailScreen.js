@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -152,6 +152,23 @@ export default function ActivityDetailScreen({ route }) {
   const isFull = detail ? detail.baseInfo.joinUserCount >= detail.baseInfo.allowUserCount : false;
   const isEnded = detail?.baseInfo?.statusName === '已结束';
 
+  // 报名 / 签到 / 签退 细分状态（来自 /apis/activity/info 的 userStatus）
+  const signStatus = useMemo(() => {
+    if (!userStatus) return null;
+    if (userStatus.hasSignOut === 1) {
+      return { text: '已签退', color: '#8e44ad', bg: '#f3e8fb' };
+    }
+    if (userStatus.hasSignIn === 1) {
+      return userStatus.isVisibleSignOut
+        ? { text: '已签到 · 待签退', color: '#2980b9', bg: '#e8f2fb' }
+        : { text: '已签到', color: '#27ae60', bg: '#e8f8f0' };
+    }
+    if (userStatus.hasJoin === 1) {
+      return { text: '已报名 · 未签到', color: '#e67e22', bg: '#fff3e0' };
+    }
+    return null;
+  }, [userStatus]);
+
   if (loading && !baseInfo) {
     return (
       <View style={styles.center}>
@@ -175,6 +192,11 @@ export default function ActivityDetailScreen({ route }) {
             <Text style={styles.registeredCount}>
               已报 {baseInfo.joinUserCount || 0}/{baseInfo.allowUserCount || 0}
             </Text>
+            {signStatus ? (
+              <View style={[styles.signPill, { backgroundColor: signStatus.bg }]}>
+                <Text style={[styles.signPillText, { color: signStatus.color }]}>{signStatus.text}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -273,6 +295,8 @@ const styles = StyleSheet.create({
   },
   creditText: { color: '#e67e22', fontWeight: 'bold', fontSize: 14 },
   registeredCount: { color: '#95a5a6', fontSize: 13 },
+  signPill: { alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, marginTop: 4 },
+  signPillText: { fontSize: 11, fontWeight: '700' },
   contentCard: {
     backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white',
     borderRadius: 25,
