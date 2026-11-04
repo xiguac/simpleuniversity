@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   LayoutAnimation,
   Modal,
   Platform,
@@ -15,7 +16,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -55,7 +55,6 @@ function fmtActivity(item) {
 }
 
 export default function StaffSignScreen() {
-  const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const { authFetchJson } = useAuth();
 
@@ -71,6 +70,8 @@ export default function StaffSignScreen() {
   const [mode, setMode] = useState('in');
   const [book, setBook] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [groupPicker, setGroupPicker] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const [groupName, setGroupName] = useState('');
@@ -109,8 +110,20 @@ export default function StaffSignScreen() {
   );
   const filteredBook = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    return book.filter((user) => !keyword || [user.realname, user.username, user.id].some((value) => value.toLowerCase().includes(keyword)));
-  }, [book, query]);
+    const members = selectedGroup === null ? null : new Set(groups.find((group) => group.name === selectedGroup)?.userIds || []);
+    return book.filter((user) => (!members || members.has(user.id)) && (!keyword || [user.realname, user.username, user.id].some((value) => value.toLowerCase().includes(keyword))));
+  }, [book, query, groups, selectedGroup]);
+
+  const chooseGroup = (group) => {
+    if (busy) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSelectedGroup(group?.name ?? null);
+    setSelectedIds(new Set(group ? book.filter((user) => group.userIds.includes(user.id)).map((user) => user.id) : []));
+    setBatchMode(!!group);
+    setBookExpanded(true);
+    setQuery('');
+    setGroupPicker(false);
+  };
 
   const toggleUser = (user) => {
     if (busy) return;
@@ -161,7 +174,7 @@ export default function StaffSignScreen() {
     }
     const signMode = mode;
     const selectedActivityId = activityId;
-    Alert.alert(`确认批量${signMode === 'out' ? '签退' : '签到'}`, `${selectedActivity.name}\n共 ${users.length} 位用户，失败后继续处理下一位。`, [
+    Alert.alert(`确认批量${signMode === 'out' ? '签退' : '签到'}`, `${selectedActivity.name}\n${selectedGroup === null ? '' : `分组：${selectedGroup}\n`}共 ${users.length} 位用户，失败后继续处理下一位。`, [
       { text: '取消', style: 'cancel' },
       { text: '开始处理', onPress: () => runBatch(users, signMode, selectedActivityId) },
     ]);
@@ -468,7 +481,13 @@ export default function StaffSignScreen() {
     setSavingGroup(true);
     try {
       setGroups(await saveUserGroups(next));
+      if (selectedGroup !== null && !next.some((group) => group.name === selectedGroup)) {
+        setSelectedGroup(null);
+        setSelectedIds(new Set());
+        setBatchMode(false);
+      }
       setEditingGroup(null);
+      return true;
     } catch (error) {
       Alert.alert('保存分组失败', error.message);
     } finally {
@@ -484,7 +503,13 @@ export default function StaffSignScreen() {
       return;
     }
     const group = { name, userIds: Array.from(groupMembers) };
-    return persistGroups(editingGroup === '' ? [...groups, group] : groups.map((item) => item.name === editingGroup ? group : item));
+    return persistGroups(editingGroup === '' ? [...groups, group] : groups.map((item) => item.name === editingGroup ? group : item)).then((saved) => {
+      if (saved && selectedGroup === editingGroup) {
+        setSelectedGroup(name);
+        setSelectedIds(new Set(group.userIds));
+        setBatchMode(true);
+      }
+    });
   };
 
   const handleDeleteGroup = (group) => {
@@ -511,17 +536,16 @@ export default function StaffSignScreen() {
     }
   }, [exportText]);
 
-  const topPadding = Math.max(headerHeight, insets.top + 12) + 8;
-
   return (
     <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: topPadding }]}
+        contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 16) + 24 }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* 活动 + 模式 */}
         <View style={styles.card}>
-          <GlassFill radius={22} />
+          <GlassFill radius={18} />
           <Text style={styles.cardTitle}>签到/签退</Text>
 
           <TouchableOpacity
@@ -531,7 +555,7 @@ export default function StaffSignScreen() {
             disabled={busy}
           >
             <View style={styles.selectorLeft}>
-              <Ionicons name="calendar-outline" size={18} color="#2ecc71" />
+              <Ionicons name="calendar-outline" size={18} color="#087f5b" />
               <View style={{ marginLeft: 10, flex: 1 }}>
                 <Text style={styles.selectorLabel}>选择活动</Text>
                 <Text style={styles.selectorValue} numberOfLines={1}>
@@ -539,7 +563,7 @@ export default function StaffSignScreen() {
                 </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#b2c0c6" />
+            <Ionicons name="chevron-forward" size={18} color="#7a8b84" />
           </TouchableOpacity>
 
           <View style={styles.modeRow}>
@@ -549,7 +573,9 @@ export default function StaffSignScreen() {
                 <TouchableOpacity
                   key={item.key}
                   style={[styles.modeBtn, active && styles.modeBtnActive]}
-                  onPress={() => setMode(item.key)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setMode(item.key); }}
                   disabled={busy}
                   activeOpacity={0.8}
                 >
@@ -565,21 +591,21 @@ export default function StaffSignScreen() {
               <Text style={styles.primaryBtnText}>扫码{ mode === 'out' ? '签退' : '签到'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryBtn} onPress={pickFromGallery} disabled={busy} activeOpacity={0.85}>
-              <Ionicons name="image-outline" size={20} color="#2ecc71" />
+              <Ionicons name="image-outline" size={20} color="#087f5b" />
               <Text style={styles.secondaryBtnText}>从相册选择</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.hint}>
-            扫码支持摄像头与相册截图；二维码有效期 10 秒。
+            身份码有效期 10 秒，请使用对方当前展示的二维码。
           </Text>
         </View>
 
         {/* 个人信息 */}
         <View style={styles.card}>
-          <GlassFill radius={22} />
+          <GlassFill radius={18} />
           <Text style={styles.cardTitle}>导出我的信息</Text>
-          <Text style={styles.hint}>生成个人信息 JSON，复制后发给签到方即可。</Text>
+          <Text style={styles.hint}>复制个人信息，发给签到方导入用户库。</Text>
           <TouchableOpacity style={[styles.secondaryBtn, styles.exportButton]} onPress={handleExport} disabled={!currentUser} activeOpacity={0.8}>
             <Ionicons name="code-slash-outline" size={18} color="#0f8f58" />
             <Text style={styles.secondaryBtnText}>{exportText ? '重新生成 JSON' : '生成我的 JSON'}</Text>
@@ -599,7 +625,7 @@ export default function StaffSignScreen() {
 
         {/* 用户库 */}
         <View style={styles.card}>
-          <GlassFill radius={22} />
+          <GlassFill radius={18} />
           <View style={styles.bookHeader}>
             <TouchableOpacity
               style={styles.bookToggle}
@@ -612,12 +638,13 @@ export default function StaffSignScreen() {
               }}
             >
               <Text style={styles.cardTitle}>用户库 · {book.length}</Text>
-              <Ionicons name={bookExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#92a2a9" />
+              <Ionicons name={bookExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#64756f" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.smallBtn} disabled={busy} onPress={() => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setBookExpanded(true);
               setBatchMode((value) => !value);
+              setSelectedGroup(null);
               setSelectedIds(new Set());
             }}>
               <Text style={styles.smallBtnText}>{batchMode ? '取消多选' : '批量选择'}</Text>
@@ -636,19 +663,23 @@ export default function StaffSignScreen() {
               <Text style={styles.importText}>导出用户库</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.selfRow} disabled={busy} onPress={() => { setEditingGroup(null); setGroupsOpen(true); }}>
-            <Ionicons name="people-outline" size={18} color="#0f8f58" />
-            <Text style={styles.importText}>管理分组 · {groups.length}</Text>
-          </TouchableOpacity>
+          <View style={styles.groupBar}>
+            <TouchableOpacity style={styles.groupSelector} disabled={busy} accessibilityLabel="选择批量操作分组" onPress={() => setGroupPicker(true)}>
+              <Ionicons name="people-outline" size={18} color="#087f5b" />
+              <Text style={styles.groupSelectorText} numberOfLines={1}>{selectedGroup === null ? '选择分组批量操作' : selectedGroup}</Text>
+              <Ionicons name="chevron-down" size={16} color="#64756f" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.manageBtn} disabled={busy} onPress={() => { setEditingGroup(null); setGroupsOpen(true); }}><Text style={styles.smallBtnText}>管理分组</Text></TouchableOpacity>
+          </View>
           {bookExpanded ? (
             <View>
               <View style={styles.bookSearch}>
-                <Ionicons name="search-outline" size={18} color="#92a2a9" />
-                <TextInput style={styles.bookSearchInput} value={query} onChangeText={setQuery} placeholder="搜索姓名、学号或 UID" placeholderTextColor="#92a2a9" autoCorrect={false} autoCapitalize="none" />
+                <Ionicons name="search-outline" size={18} color="#64756f" />
+                <TextInput style={styles.bookSearchInput} value={query} onChangeText={setQuery} placeholder="搜索姓名、学号或 UID" placeholderTextColor="#64756f" autoCorrect={false} autoCapitalize="none" />
               </View>
               {batchMode ? (
                 <View style={styles.batchBar}>
-                  <TouchableOpacity disabled={busy || !filteredBook.length} onPress={() => setSelectedIds((previous) => {
+                  <TouchableOpacity style={styles.textButton} disabled={busy || !filteredBook.length} onPress={() => setSelectedIds((previous) => {
                     const next = new Set(previous);
                     const allSelected = filteredBook.every((user) => next.has(user.id));
                     filteredBook.forEach((user) => { if (allSelected) next.delete(user.id); else next.add(user.id); });
@@ -656,18 +687,18 @@ export default function StaffSignScreen() {
                   })}>
                     <Text style={styles.smallBtnText}>全选当前结果</Text>
                   </TouchableOpacity>
-                  <Text style={styles.hint}>已选 {selectedIds.size} 人</Text>
+                  <Text style={styles.selectionCount}>已选 {selectedIds.size} 人</Text>
                 </View>
               ) : null}
               {currentUser ? (
                 <TouchableOpacity style={styles.selfRow} onPress={handleAddSelf} disabled={busy} activeOpacity={0.8}>
-                  <Ionicons name="person-add-outline" size={16} color="#e67e22" />
+                  <Ionicons name="person-add-outline" size={16} color="#64756f" />
                   <Text style={styles.selfText}>将当前账号加入用户库</Text>
                 </TouchableOpacity>
               ) : null}
               {book.length === 0 ? (
                 <Text style={styles.emptyText}>让对方复制个人信息 JSON，点击「导入用户」保存到这里。</Text>
-              ) : filteredBook.length === 0 ? <Text style={styles.emptyText}>没有找到匹配的用户</Text> : filteredBook.map((user) => (
+              ) : filteredBook.length === 0 ? <Text style={styles.emptyText}>{selectedGroup !== null && !query.trim() ? '该分组暂无成员，可在“管理分组”中添加。' : '没有找到匹配的用户'}</Text> : filteredBook.map((user) => (
                 <View key={user.id} style={styles.userRow}>
                   <TouchableOpacity style={styles.userMain} onPress={() => toggleUser(user)} disabled={busy} activeOpacity={0.7}>
                     {batchMode ? <Ionicons name={selectedIds.has(user.id) ? 'checkbox' : 'square-outline'} size={22} color="#0f8f58" style={{ marginRight: 10 }} /> : null}
@@ -676,8 +707,9 @@ export default function StaffSignScreen() {
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={styles.userName}>{user.realname || '未填写姓名'}</Text>
-                      <Text style={styles.userSub}>{user.username ? `学号 ${user.username}` : '无学号'} · UID {user.id}</Text>
-                      {groups.some((group) => group.userIds.includes(user.id)) ? <Text style={styles.hint}>{groups.filter((group) => group.userIds.includes(user.id)).map((group) => group.name).join(' · ')}</Text> : null}
+                      <Text style={styles.userSub}>{user.username ? `学号 ${user.username}` : '无学号'}</Text>
+                      <Text style={styles.userSub}>UID {user.id}</Text>
+                      <View style={styles.tags}>{groups.filter((group) => group.userIds.includes(user.id)).map((group) => <Text key={group.name} style={styles.tag}>{group.name}</Text>)}</View>
                     </View>
                     {!batchMode ? <Ionicons name="qr-code-outline" size={18} color="#0f8f58" /> : null}
                   </TouchableOpacity>
@@ -696,17 +728,16 @@ export default function StaffSignScreen() {
           ) : null}
         </View>
 
-        <Text style={styles.footerHint}>
-          选择已保存的用户后，可为其签到或签退。操作结果以服务端返回为准。
-        </Text>
+        <Text style={styles.footerHint}>批量处理遇到失败会继续，完成后显示成功用户和失败原因。</Text>
       </ScrollView>
 
       <Modal visible={groupsOpen} transparent animationType="fade" onRequestClose={() => { if (!savingGroup) setGroupsOpen(false); }}>
-        <View style={styles.modalMask}>
+        <KeyboardAvoidingView style={[styles.modalMask, { paddingBottom: Math.max(insets.bottom, 12) }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>{editingGroup === null ? '管理分组' : editingGroup === '' ? '新增分组' : '编辑分组'}</Text>
             {editingGroup === null ? <>
-              <TouchableOpacity style={[styles.importBtn, { flex: 0 }]} disabled={savingGroup} onPress={() => openGroupEditor()}><Text style={styles.importText}>新增分组</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.importBtn, { flex: 0 }]} disabled={savingGroup} onPress={() => openGroupEditor()}><Ionicons name="add" size={20} color="#087f5b" /><Text style={styles.importText}>新增分组</Text></TouchableOpacity>
               <ScrollView style={{ maxHeight: 360 }}>
                 {!groups.length ? <Text style={styles.emptyText}>还没有分组，新增后可勾选用户库成员。</Text> : null}
                 {groups.map((group) => <View key={group.name} style={styles.userRow}>
@@ -727,14 +758,36 @@ export default function StaffSignScreen() {
                   return next;
                 })}>
                   <Ionicons name={groupMembers.has(user.id) ? 'checkbox' : 'square-outline'} size={22} color="#0f8f58" />
-                  <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.userName}>{user.realname || user.username || user.id}</Text><Text style={styles.userSub}>{user.username} · UID {user.id}</Text></View>
+                  <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.userName}>{user.realname || user.username || user.id}</Text><Text style={styles.userSub}>学号 {user.username || '未填写'}</Text><Text style={styles.userSub}>UID {user.id}</Text></View>
                 </TouchableOpacity>)}
               </ScrollView>
               <TouchableOpacity style={[styles.primaryBtn, styles.exportButton]} disabled={savingGroup} onPress={handleSaveGroup}><Text style={styles.primaryBtnText}>{savingGroup ? '保存中…' : '保存分组'}</Text></TouchableOpacity>
             </>}
             <TouchableOpacity style={styles.closeBtn} disabled={savingGroup} onPress={() => editingGroup === null ? setGroupsOpen(false) : setEditingGroup(null)}><Text style={styles.closeBtnText}>{editingGroup === null ? '关闭' : '返回分组列表'}</Text></TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={groupPicker} transparent animationType="fade" onRequestClose={() => setGroupPicker(false)}>
+        <Pressable style={[styles.modalMask, { paddingBottom: Math.max(insets.bottom, 12) }]} onPress={() => setGroupPicker(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>选择分组</Text>
+            <Text style={styles.pasteHint}>一次选择一个分组，自动勾选组内成员。</Text>
+            <ScrollView style={{ maxHeight: 360 }}>
+              <TouchableOpacity style={[styles.activityItem, selectedGroup === null && styles.activityItemActive]} disabled={busy} onPress={() => chooseGroup(null)}>
+                <View style={{ flex: 1 }}><Text style={styles.userName}>全部用户</Text><Text style={styles.userSub}>返回用户库，手动选择成员</Text></View>
+                {selectedGroup === null ? <Ionicons name="checkmark-circle" size={22} color="#087f5b" /> : null}
+              </TouchableOpacity>
+              {groups.map((group) => <TouchableOpacity key={group.name} style={[styles.activityItem, selectedGroup === group.name && styles.activityItemActive]} disabled={busy} onPress={() => chooseGroup(group)}>
+                <View style={{ flex: 1 }}><Text style={styles.userName}>{group.name}</Text><Text style={styles.userSub}>{group.userIds.length} 位成员</Text></View>
+                <Ionicons name={selectedGroup === group.name ? 'checkmark-circle' : 'chevron-forward'} size={22} color="#087f5b" />
+              </TouchableOpacity>)}
+              {!groups.length ? <Text style={styles.emptyText}>还没有分组，请在“管理分组”中新增并添加成员。</Text> : null}
+            </ScrollView>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setGroupPicker(false)}><Text style={styles.closeBtnText}>关闭</Text></TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal visible={!!batchResults} transparent animationType="fade" onRequestClose={() => setBatchResults(null)}>
@@ -785,7 +838,7 @@ export default function StaffSignScreen() {
           <Pressable style={styles.sheet} onPress={() => {}}>
             <Text style={styles.sheetTitle}>选择活动</Text>
             {loadingActivities ? (
-              <ActivityIndicator color="#2ecc71" style={{ marginVertical: 24 }} />
+              <ActivityIndicator color="#087f5b" style={{ marginVertical: 24 }} />
             ) : activities.length === 0 ? (
               <Text style={styles.emptyText}>
                 当前账号没有可签到的活动。只有活动签到员 / 管理员才能在这里看到活动。
@@ -808,7 +861,7 @@ export default function StaffSignScreen() {
                         <Text style={styles.activityName} numberOfLines={2}>{item.name}</Text>
                         <Text style={styles.activityTime}>{fmtActivity(item)}</Text>
                       </View>
-                      {active ? <Ionicons name="checkmark-circle" size={20} color="#2ecc71" /> : null}
+                      {active ? <Ionicons name="checkmark-circle" size={20} color="#087f5b" /> : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -827,7 +880,7 @@ export default function StaffSignScreen() {
       >
         <Pressable style={styles.modalMask} onPress={() => setQrUser(null)}>
           <Pressable style={styles.qrSheet} onPress={() => {}}>
-            <Text style={styles.sheetTitle}>代签到</Text>
+            <Text style={styles.sheetTitle}>用户身份码</Text>
             <Text style={styles.qrWho}>
               {qrUser?.realname || '未填写姓名'}
               {qrUser?.username ? ` · ${qrUser.username}` : ''}
@@ -838,7 +891,7 @@ export default function StaffSignScreen() {
                 <QRCode value={qrValue} size={220} color="#20323a" backgroundColor="white" quietZone={8} />
               ) : (
                 <View style={styles.qrLoading}>
-                  <ActivityIndicator color="#2ecc71" />
+                  <ActivityIndicator color="#087f5b" />
                 </View>
               )}
             </View>
@@ -846,7 +899,7 @@ export default function StaffSignScreen() {
 
             <View style={styles.qrActions}>
               <TouchableOpacity
-                style={[styles.qrActionBtn, { backgroundColor: '#2ecc71' }]}
+                style={[styles.qrActionBtn, { backgroundColor: '#087f5b' }]}
                 disabled={busy}
                 onPress={() => {
                   if (!qrUser) return;
@@ -912,7 +965,7 @@ export default function StaffSignScreen() {
               value={pasteText}
               onChangeText={setPasteText}
               placeholder='{"users":[{"id":"123","username":"S001","fullProfile":{"realname":"示例用户"}}]}'
-              placeholderTextColor="#b2c0c6"
+              placeholderTextColor="#7a8b84"
               autoCapitalize="none"
               autoCorrect={false}
             />
@@ -959,16 +1012,17 @@ export default function StaffSignScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f4f7f6' },
-  content: { paddingHorizontal: 16, paddingBottom: 40 },
+  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
   card: {
     backgroundColor: nativeGlass ? 'rgba(255,255,255,0.5)' : 'white',
-    borderRadius: 22,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e1e9e5',
     padding: 16,
     marginBottom: 16,
     overflow: 'hidden',
-    elevation: 2,
   },
-  cardTitle: { fontSize: 16, fontWeight: '800', color: '#20323a' },
+  cardTitle: { fontSize: 17, fontWeight: '700', color: '#20323a' },
   selector: {
     marginTop: 14,
     backgroundColor: '#f4f8f7',
@@ -978,8 +1032,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   selectorLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  selectorLabel: { fontSize: 11, color: '#92a2a9', marginBottom: 2 },
-  selectorValue: { fontSize: 14, fontWeight: '700', color: '#2c3e50' },
+  selectorLabel: { fontSize: 12, color: '#64756f', marginBottom: 2 },
+  selectorValue: { fontSize: 15, fontWeight: '700', color: '#2c3e50' },
   modeRow: {
     flexDirection: 'row',
     backgroundColor: '#eaf1ef',
@@ -987,44 +1041,46 @@ const styles = StyleSheet.create({
     padding: 4,
     marginTop: 14,
   },
-  modeBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 11 },
-  modeBtnActive: { backgroundColor: 'white' },
+  modeBtn: { flex: 1, alignItems: 'center', minHeight: 44, justifyContent: 'center', paddingVertical: 10, borderRadius: 11 },
+  modeBtnActive: { backgroundColor: '#087f5b' },
   modeText: { fontSize: 14, fontWeight: '600', color: '#799097' },
-  modeTextActive: { color: '#20323a' },
+  modeTextActive: { color: 'white' },
   actionRow: { flexDirection: 'row', marginTop: 14, gap: 10 },
   primaryBtn: {
     flex: 1,
-    backgroundColor: '#2ecc71',
-    borderRadius: 16,
-    paddingVertical: 15,
+    backgroundColor: '#087f5b',
+    borderRadius: 14,
+    minHeight: 48,
+    paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
   },
-  primaryBtnText: { color: 'white', fontSize: 15, fontWeight: '800' },
+  primaryBtnText: { color: 'white', fontSize: 14, fontWeight: '700' },
   secondaryBtn: {
     flex: 1,
     backgroundColor: '#e8f8f0',
-    borderRadius: 16,
-    paddingVertical: 15,
+    borderRadius: 14,
+    minHeight: 48,
+    paddingVertical: 13,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 6,
   },
-  secondaryBtnText: { color: '#27ae60', fontSize: 15, fontWeight: '800' },
-  hint: { marginTop: 10, fontSize: 11, color: '#92a2a9', lineHeight: 17 },
+  secondaryBtnText: { color: '#087f5b', fontSize: 14, fontWeight: '700' },
+  hint: { marginTop: 10, fontSize: 12, color: '#64756f', lineHeight: 19 },
   exportButton: { marginTop: 14, flex: 0, paddingVertical: 13 },
   bookSearch: { marginTop: 16, flexDirection: 'row', alignItems: 'center', borderRadius: 14, backgroundColor: '#f4f8f7', paddingHorizontal: 12 },
-  bookSearchInput: { flex: 1, paddingVertical: 13, paddingHorizontal: 8, color: '#20323a', fontSize: 14 },
+  bookSearchInput: { flex: 1, minHeight: 48, paddingVertical: 12, paddingHorizontal: 8, color: '#20323a', fontSize: 14 },
   batchBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 10 },
   resultHeading: { fontSize: 15, fontWeight: '700', marginTop: 12 },
   resultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eef3f1' },
   resultError: { color: '#c0392b', fontSize: 12, lineHeight: 18, marginTop: 5 },
   codeBox: { maxHeight: 200, marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#f4f8f7' },
   codeText: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12, lineHeight: 19, color: '#34495e' },
-  bookToggle: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
+  bookToggle: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
   bookHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   smallBtn: {
     flexDirection: 'row',
@@ -1032,13 +1088,16 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#e8f8f0',
     borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
-  smallBtnText: { color: '#27ae60', fontSize: 12, fontWeight: '700' },
+  smallBtnText: { color: '#087f5b', fontSize: 13, fontWeight: '700' },
   importRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
   importBtn: {
     flex: 1,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1047,16 +1106,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 12,
   },
-  importText: { fontSize: 12, fontWeight: '700', color: '#34495e' },
+  importText: { fontSize: 13, fontWeight: '700', color: '#34495e' },
   selfRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 12,
+    marginTop: 8,
+    minHeight: 44,
     paddingHorizontal: 2,
   },
-  selfText: { fontSize: 12, color: '#e67e22', fontWeight: '600', flex: 1 },
-  emptyText: { fontSize: 12, color: '#92a2a9', lineHeight: 19, marginTop: 14 },
+  selfText: { fontSize: 12, color: '#64756f', fontWeight: '600', flex: 1 },
+  emptyText: { fontSize: 12, color: '#64756f', lineHeight: 19, marginTop: 14 },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1074,16 +1134,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: '#27ae60', fontWeight: '800', fontSize: 16 },
-  userName: { fontSize: 14, fontWeight: '700', color: '#2c3e50' },
-  userSub: { fontSize: 11, color: '#92a2a9', marginTop: 3 },
-  removeBtn: { padding: 8 },
-  footerHint: { fontSize: 11, color: '#a6b4ba', textAlign: 'center', lineHeight: 17 },
+  avatarText: { color: '#087f5b', fontWeight: '800', fontSize: 16 },
+  userName: { fontSize: 15, fontWeight: '700', color: '#2c3e50' },
+  userSub: { fontSize: 12, color: '#64756f', marginTop: 4, lineHeight: 18 },
+  removeBtn: { padding: 10, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  footerHint: { fontSize: 12, color: '#64756f', textAlign: 'center', lineHeight: 17 },
+  groupBar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 },
+  groupSelector: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, paddingHorizontal: 12, backgroundColor: '#edf7f2', borderRadius: 12 },
+  groupSelectorText: { flex: 1, fontSize: 13, color: '#087f5b', fontWeight: '600' },
+  manageBtn: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
+  textButton: { minHeight: 44, justifyContent: 'center' },
+  selectionCount: { fontSize: 12, color: '#64756f' },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 },
+  tag: { fontSize: 11, color: '#087f5b', backgroundColor: '#edf7f2', borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3, overflow: 'hidden' },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#d7e2dc', alignSelf: 'center', marginBottom: 18 },
   modalMask: {
     flex: 1,
     backgroundColor: 'rgba(15,28,33,0.45)',
-    justifyContent: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 24,
+    paddingBottom: 24,
   },
   sheet: {
     backgroundColor: 'white',
@@ -1091,18 +1162,19 @@ const styles = StyleSheet.create({
     padding: 18,
     maxHeight: '85%',
   },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#20323a', textAlign: 'center', marginBottom: 12 },
+  sheetTitle: { fontSize: 18, fontWeight: '700', color: '#20323a', marginBottom: 16 },
   activityItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 14,
+    minHeight: 60,
     borderRadius: 14,
     marginBottom: 8,
     backgroundColor: '#f6f9f8',
   },
   activityItemActive: { backgroundColor: '#e8f8f0' },
   activityName: { fontSize: 14, fontWeight: '700', color: '#2c3e50' },
-  activityTime: { fontSize: 11, color: '#92a2a9', marginTop: 4 },
+  activityTime: { fontSize: 11, color: '#64756f', marginTop: 4 },
   qrSheet: { backgroundColor: 'white', borderRadius: 24, padding: 20, alignItems: 'center' },
   qrWho: { fontSize: 13, color: '#7f8c8d', marginTop: -4, marginBottom: 12 },
   qrBox: {
@@ -1113,13 +1185,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
   },
   qrLoading: { width: 220, height: 220, alignItems: 'center', justifyContent: 'center' },
-  qrTimer: { fontSize: 12, color: '#92a2a9', marginTop: 10 },
+  qrTimer: { fontSize: 12, color: '#64756f', marginTop: 10 },
   qrActions: { flexDirection: 'row', gap: 10, marginTop: 16, alignSelf: 'stretch' },
   qrActionBtn: { flex: 1, borderRadius: 15, paddingVertical: 14, alignItems: 'center' },
-  qrActionText: { color: 'white', fontSize: 15, fontWeight: '800' },
-  closeBtn: { marginTop: 12, paddingVertical: 10, alignSelf: 'stretch', alignItems: 'center' },
-  closeBtnText: { color: '#92a2a9', fontSize: 14, fontWeight: '600' },
-  pasteHint: { fontSize: 11, color: '#92a2a9', marginBottom: 10, lineHeight: 17 },
+  qrActionText: { color: 'white', fontSize: 14, fontWeight: '700' },
+  closeBtn: { marginTop: 12, minHeight: 44, justifyContent: 'center', paddingVertical: 10, alignSelf: 'stretch', alignItems: 'center' },
+  closeBtnText: { color: '#64756f', fontSize: 14, fontWeight: '600' },
+  pasteHint: { fontSize: 11, color: '#64756f', marginBottom: 10, lineHeight: 17 },
   pasteInput: {
     minHeight: 150,
     maxHeight: 260,
@@ -1144,7 +1216,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 13,
     alignItems: 'center',
-    backgroundColor: '#2ecc71',
+    backgroundColor: '#087f5b',
   },
   pasteOkText: { color: 'white', fontSize: 14, fontWeight: '800' },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
