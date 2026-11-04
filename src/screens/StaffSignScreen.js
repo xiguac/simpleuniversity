@@ -614,7 +614,7 @@ export default function StaffSignScreen() {
         </View>
 
         {/* 个人信息 */}
-        <Animated.View layout={SECTION_LAYOUT} style={styles.card}>
+        <Animated.View layout={Platform.OS === 'ios' ? SECTION_LAYOUT : undefined} style={styles.card}>
           <GlassFill radius={18} />
           <Text style={styles.cardTitle}>导出我的信息</Text>
           <Text style={styles.hint}>复制个人信息，发给签到方导入用户库。</Text>
