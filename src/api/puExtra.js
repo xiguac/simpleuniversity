@@ -11,7 +11,7 @@ export const PU_API = 'https://apis.pocketuni.net';
 const DES_KEY = CryptoJS.enc.Utf8.parse('TG123!@#');
 
 // 二维码有效期（秒），与服务端 /apis/system/time 对齐
-export const QR_TTL_SECONDS = 30;
+export const QR_TTL_SECONDS = 10;
 
 export function desEncrypt(plain) {
   const encrypted = CryptoJS.DES.encrypt(plain, DES_KEY, {

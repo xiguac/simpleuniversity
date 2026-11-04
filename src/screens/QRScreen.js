@@ -1,12 +1,12 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Dimensions, Easing, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, AppState, Dimensions, Easing, Platform, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Brightness from 'expo-brightness';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import GlassFill, { nativeGlass } from '../ui/GlassFill';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../context/AuthContext';
-import { buildUserQrPlain, desEncrypt, fetchServerTimeSeconds } from '../api/puExtra';
+import { buildUserQrPlain, desEncrypt, fetchServerTimeSeconds, QR_TTL_SECONDS } from '../api/puExtra';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
@@ -15,13 +15,13 @@ const GLASS = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
 export default function QRScreen() {
   const { authFetchJson } = useAuth();
   const [qrValue, setQrValue] = useState('LOADING');
-  const [timeLeft, setTimeLeft] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(QR_TTL_SECONDS);
   const [userInfo, setUserInfo] = useState(null);
   const progressAnim = useRef(new Animated.Value(1)).current;
   const qrOpacity = useRef(new Animated.Value(1)).current;
   const qrScale = useRef(new Animated.Value(1)).current;
   const timerRef = useRef(null);
-  const originalBrightnessRef = useRef(null);
+  const brightnessTaskRef = useRef(Promise.resolve());
 
   const generateEncryptedQR = useCallback(async (user) => {
     if (!user || !user.baseUserInfo) {
@@ -38,11 +38,11 @@ export default function QRScreen() {
 
   const startCountdown = useCallback((user) => {
     generateEncryptedQR(user);
-    setTimeLeft(10);
+    setTimeLeft(QR_TTL_SECONDS);
     progressAnim.setValue(1);
     Animated.timing(progressAnim, {
       toValue: 0,
-      duration: 10000,
+      duration: QR_TTL_SECONDS * 1000,
       easing: Easing.linear,
       useNativeDriver: true,
     }).start();
@@ -85,11 +85,11 @@ export default function QRScreen() {
           progressAnim.setValue(1);
           Animated.timing(progressAnim, {
             toValue: 0,
-            duration: 10000,
+            duration: QR_TTL_SECONDS * 1000,
             easing: Easing.linear,
             useNativeDriver: true,
           }).start();
-          return 10;
+          return QR_TTL_SECONDS;
         }
         return prev - 1;
       });
@@ -107,6 +107,25 @@ export default function QRScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      let originalBrightness = null;
+      let usedSystemBrightness = false;
+
+      const updateBrightness = (brighten) => {
+        brightnessTaskRef.current = brightnessTaskRef.current.then(async () => {
+          if (brighten) {
+            if (!active || AppState.currentState !== 'active') return;
+            if (originalBrightness == null) {
+              usedSystemBrightness = Platform.OS === 'android' && await Brightness.isUsingSystemBrightnessAsync();
+              originalBrightness = await Brightness.getBrightnessAsync();
+            }
+            if (active && AppState.currentState === 'active') await Brightness.setBrightnessAsync(1);
+          } else if (originalBrightness != null) {
+            if (usedSystemBrightness) await Brightness.restoreSystemBrightnessAsync();
+            else await Brightness.setBrightnessAsync(originalBrightness);
+            originalBrightness = null;
+          }
+        }).catch((error) => console.error('身份码亮度调整失败', error));
+      };
 
       const prepare = async () => {
         try {
@@ -117,23 +136,22 @@ export default function QRScreen() {
 
           const parsed = JSON.parse(savedData);
           setUserInfo(parsed);
-          originalBrightnessRef.current = await Brightness.getBrightnessAsync();
-          await Brightness.setBrightnessAsync(1);
           startCountdown(parsed);
+          updateBrightness(true);
         } catch (error) {
           console.error(error);
         }
       };
 
       prepare();
+      const subscription = AppState.addEventListener('change', (state) => updateBrightness(state === 'active'));
 
       return () => {
         active = false;
+        subscription.remove();
         stopCountdown();
-        setTimeLeft(10);
-        if (originalBrightnessRef.current != null) {
-          Brightness.setBrightnessAsync(originalBrightnessRef.current).catch(() => {});
-        }
+        setTimeLeft(QR_TTL_SECONDS);
+        updateBrightness(false);
       };
     }, [startCountdown, stopCountdown])
   );

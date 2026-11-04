@@ -201,7 +201,7 @@ function AppShell() {
             <Stack.Screen name="TribeList" component={TribeListScreen} options={{ title: '我的部落' }} />
             <Stack.Screen name="TribeDetail" component={TribeDetailScreen} options={{ title: '部落详情' }} />
             <Stack.Screen name="ActivityDetail" component={ActivityDetailScreen} options={{ title: '活动详情' }} />
-            <Stack.Screen name="StaffSign" component={StaffSignScreen} options={{ title: '签到员' }} />
+            <Stack.Screen name="StaffSign" component={StaffSignScreen} options={{ title: '签到/签退' }} />
             <Stack.Screen name="Credit" component={CreditScreen} options={{ title: '实践学分' }} />
             <Stack.Screen name="CreditDetail" component={CreditDetailScreen} options={{ title: '学分明细' }} />
           </Stack.Navigator>

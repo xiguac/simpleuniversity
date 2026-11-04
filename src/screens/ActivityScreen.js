@@ -260,14 +260,6 @@ export default function ActivityScreen({ navigation }) {
         <TouchableOpacity style={styles.searchAction} activeOpacity={0.9} onPress={() => searchAll(query)}>
           <Text style={styles.searchActionText}>搜索</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.searchAction}
-          activeOpacity={0.8}
-          accessibilityLabel="签到员扫码"
-          onPress={() => navigation.navigate('StaffSign')}
-        >
-          <Ionicons name="scan-outline" size={22} color="#0f8f58" />
-        </TouchableOpacity>
       </View>
     </View>
   );

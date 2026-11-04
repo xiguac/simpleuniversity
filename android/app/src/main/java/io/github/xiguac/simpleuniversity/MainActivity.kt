@@ -1,4 +1,4 @@
-package io.github.xiguac.simpleuniversity
+package io.github.xiguac.android.simpleuniversity
 
 import android.os.Build
 import android.os.Bundle

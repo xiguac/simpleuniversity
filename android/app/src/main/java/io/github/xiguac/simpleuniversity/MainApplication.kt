@@ -1,4 +1,4 @@
-package io.github.xiguac.simpleuniversity
+package io.github.xiguac.android.simpleuniversity
 
 import android.app.Application
 import android.content.res.Configuration

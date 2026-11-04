@@ -15,14 +15,11 @@
         "UIDesignRequiresCompatibility": false,
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "io.github.xiguac.simpleuniversity"
+      "bundleIdentifier": "io.github.xiguac.ios.simpleuniversity"
     },
     "android": {
-      "package": "io.github.xiguac.simpleuniversity",
-      "adaptiveIcon": {
-        "foregroundImage": "./icon.png",
-        "backgroundColor": "#f4f7f6"
-      }
+      "package": "io.github.xiguac.android.simpleuniversity",
+      "icon": "./icon.png"
     },
     "web": {
       "favicon": "./icon.png"
@@ -42,6 +39,15 @@
         "expo-image-picker",
         {
           "photosPermission": "允许简校园访问相册以选择二维码图片"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#f4f7f6",
+          "android": {
+            "drawable": { "icon": "./assets/splash-empty.xml" }
+          }
         }
       ]
     ],

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -18,9 +19,7 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, scanFromURLAsync, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import * as Clipboard from 'expo-clipboard';
-import * as FileSystem from 'expo-file-system/legacy';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '../context/AuthContext';
 import GlassFill, { nativeGlass } from '../ui/GlassFill';
@@ -31,16 +30,17 @@ import {
   fetchServerTimeSeconds,
   isQrFresh,
   parseQrPayload,
+  QR_TTL_SECONDS,
   staffSign,
 } from '../api/puExtra';
 import {
   loadUserBook,
+  buildExportPayload,
   mergeUserBook,
   normalizeUser,
   parseUserJson,
   removeUserFromBook,
 } from '../utils/userBook';
-import { shareUsers } from '../utils/exportUsers';
 
 const MODES = [
   { key: 'in', label: '签到' },
@@ -69,6 +69,16 @@ export default function StaffSignScreen() {
 
   const [mode, setMode] = useState('in');
   const [book, setBook] = useState([]);
+  const [bookExpanded, setBookExpanded] = useState(false);
+  const [exportText, setExportText] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [query, setQuery] = useState('');
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [batchProgress, setBatchProgress] = useState(null);
+  const [batchResults, setBatchResults] = useState(null);
+  const [bookExportText, setBookExportText] = useState('');
+  const [bookCopied, setBookCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -78,7 +88,7 @@ export default function StaffSignScreen() {
 
   const [qrUser, setQrUser] = useState(null);
   const [qrValue, setQrValue] = useState('');
-  const [qrLeft, setQrLeft] = useState(25);
+  const [qrLeft, setQrLeft] = useState(QR_TTL_SECONDS);
 
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
@@ -90,6 +100,65 @@ export default function StaffSignScreen() {
     () => activities.find((item) => String(item.id) === String(activityId)) || null,
     [activities, activityId]
   );
+  const filteredBook = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return book.filter((user) => !keyword || [user.realname, user.username, user.id].some((value) => value.toLowerCase().includes(keyword)));
+  }, [book, query]);
+
+  const toggleUser = (user) => {
+    if (busy) return;
+    if (!batchMode) {
+      setQrUser(user);
+      return;
+    }
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(user.id)) next.delete(user.id);
+      else next.add(user.id);
+      return next;
+    });
+  };
+
+  const runBatch = async (users, signMode, selectedActivityId) => {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+    setBusy(true);
+    const results = [];
+    setBatchProgress({ done: 0, total: users.length });
+    try {
+      for (const user of users) {
+        try {
+          const json = await staffSign(authFetchJson, tokenRef.current, sidRef.current, {
+            activityId: selectedActivityId, mid: user.id, mode: signMode,
+          });
+          results.push({ user, success: json?.code === 0, message: json?.code === 0 ? '' : json?.message || json?.msg || '服务端未返回错误原因' });
+        } catch (error) {
+          results.push({ user, success: false, message: error.message || '网络请求失败' });
+        }
+        setBatchProgress({ done: results.length, total: users.length });
+      }
+      setBatchResults({ mode: signMode, results });
+    } finally {
+      submitLockRef.current = false;
+      setBusy(false);
+      setBatchProgress(null);
+    }
+  };
+
+  const confirmBatch = () => {
+    const users = book.filter((user) => selectedIds.has(user.id));
+    if (!users.length || busy) return;
+    if (!selectedActivity) {
+      Alert.alert('提示', '请先选择活动');
+      return;
+    }
+    const signMode = mode;
+    const selectedActivityId = activityId;
+    Alert.alert(`确认批量${signMode === 'out' ? '签退' : '签到'}`, `${selectedActivity.name}\n共 ${users.length} 位用户，失败后继续处理下一位。`, [
+      { text: '取消', style: 'cancel' },
+      { text: '开始处理', onPress: () => runBatch(users, signMode, selectedActivityId) },
+    ]);
+  };
 
   // 读取本地账号
   useEffect(() => {
@@ -137,18 +206,18 @@ export default function StaffSignScreen() {
     })();
   }, [token, sid, authFetchJson]);
 
-  // 二维码倒计时：每 25 秒重新取服务器时间
+  // 二维码倒计时：每 10 秒重新取服务器时间
   useEffect(() => {
     if (!qrUser) return undefined;
     let cancelled = false;
-    let left = 25;
+    let left = QR_TTL_SECONDS;
     setQrValue('');
     const refresh = async () => {
       try {
         const ts = await fetchServerTimeSeconds(authFetchJson, tokenRef.current, sidRef.current);
         if (!cancelled) {
           setQrValue(desEncrypt(buildUserQrPlain(qrUser.id, ts, qrUser.username)));
-          left = 25;
+          left = QR_TTL_SECONDS;
           setQrLeft(left);
         }
       } catch (error) {
@@ -159,7 +228,7 @@ export default function StaffSignScreen() {
     const timer = setInterval(() => {
       left -= 1;
       if (left <= 0) {
-        left = 25;
+        left = QR_TTL_SECONDS;
         refresh();
       }
       if (!cancelled) setQrLeft(left);
@@ -295,51 +364,56 @@ export default function StaffSignScreen() {
     }
   }, [handleScannedText]);
 
-  const handleImportFile = useCallback(async () => {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: ['application/json', 'text/plain', '*/*'],
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
-      if (res.canceled || !res.assets?.length) return;
-      const text = await FileSystem.readAsStringAsync(res.assets[0].uri);
-      const users = parseUserJson(text);
-      const merged = await mergeUserBook(users);
-      setBook(merged);
-      Alert.alert('导入成功', `识别到 ${users.length} 个用户，当前共 ${merged.length} 个`);
-    } catch (error) {
-      Alert.alert('导入失败', error?.message || '文件读取失败');
-    }
+  const confirmImport = useCallback((users) => {
+    const names = users.map((user) => user.realname || user.username || `UID ${user.id}`).join('、');
+    Alert.alert('确认导入用户', `是否为用户 ${names}？\n确认后保存到本地用户库。`, [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '确认导入',
+        onPress: async () => {
+          try {
+            const merged = await mergeUserBook(users);
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setBook(merged);
+            setBookExpanded(true);
+            setPasteOpen(false);
+            setPasteText('');
+            Alert.alert('导入成功', `已保存 ${users.length} 个用户`);
+          } catch (error) {
+            Alert.alert('导入失败', error.message);
+          }
+        },
+      },
+    ]);
   }, []);
 
   const handlePasteImport = useCallback(async () => {
     try {
       const users = parseUserJson(pasteText);
-      const merged = await mergeUserBook(users);
-      setBook(merged);
-      setPasteOpen(false);
-      setPasteText('');
-      Alert.alert('导入成功', `识别到 ${users.length} 个用户，当前共 ${merged.length} 个`);
+      confirmImport(users);
     } catch (error) {
       Alert.alert('导入失败', error?.message || 'JSON 格式不正确');
     }
-  }, [pasteText]);
+  }, [pasteText, confirmImport]);
 
   const handleClipboardImport = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
-      const users = parseUserJson(text);
-      const merged = await mergeUserBook(users);
-      setBook(merged);
-      Alert.alert('导入成功', `识别到 ${users.length} 个用户，当前共 ${merged.length} 个`);
+      let users;
+      try {
+        users = parseUserJson(text);
+      } catch (error) {
+        setPasteText('');
+        setPasteOpen(true);
+        return;
+      }
+      confirmImport(users);
     } catch (error) {
-      Alert.alert('剪贴板导入失败', error.message, [
-        { text: '取消', style: 'cancel' },
-        { text: '手动粘贴', onPress: () => setPasteOpen(true) },
-      ]);
+      console.warn('读取剪贴板失败，改为手动粘贴', error);
+      setPasteText('');
+      setPasteOpen(true);
     }
-  }, []);
+  }, [confirmImport]);
 
   const handleAddSelf = useCallback(async () => {
     if (!currentUser) return;
@@ -362,6 +436,11 @@ export default function StaffSignScreen() {
           try {
             const next = await removeUserFromBook(user.id);
             setBook(next);
+            setSelectedIds((previous) => {
+              const selected = new Set(previous);
+              selected.delete(user.id);
+              return selected;
+            });
           } catch (error) {
             Alert.alert('移除失败', error.message);
           }
@@ -370,18 +449,22 @@ export default function StaffSignScreen() {
     ]);
   }, []);
 
-  const handleExport = useCallback(async () => {
-    const users = book.length ? book : currentUser ? [currentUser] : [];
-    if (!users.length) {
-      Alert.alert('提示', '用户库为空');
-      return;
-    }
+  const handleExport = useCallback(() => {
+    if (!currentUser) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExportText(JSON.stringify(buildExportPayload([currentUser]), null, 2));
+    setCopied(false);
+  }, [currentUser]);
+
+  const handleCopy = useCallback(async () => {
     try {
-      await shareUsers(users);
+      const saved = await Clipboard.setStringAsync(exportText);
+      if (!saved) throw new Error('剪贴板写入失败，请重试');
+      setCopied(true);
     } catch (error) {
-      Alert.alert('导出失败', error?.message || '请稍后重试');
+      Alert.alert('复制失败', error.message);
     }
-  }, [book, currentUser]);
+  }, [exportText]);
 
   const topPadding = Math.max(headerHeight, insets.top + 12) + 8;
 
@@ -394,17 +477,18 @@ export default function StaffSignScreen() {
         {/* 活动 + 模式 */}
         <View style={styles.card}>
           <GlassFill radius={22} />
-          <Text style={styles.cardTitle}>签到设置</Text>
+          <Text style={styles.cardTitle}>签到/签退</Text>
 
           <TouchableOpacity
             style={styles.selector}
             activeOpacity={0.7}
             onPress={() => setActivityPicker(true)}
+            disabled={busy}
           >
             <View style={styles.selectorLeft}>
               <Ionicons name="calendar-outline" size={18} color="#2ecc71" />
               <View style={{ marginLeft: 10, flex: 1 }}>
-                <Text style={styles.selectorLabel}>活动</Text>
+                <Text style={styles.selectorLabel}>选择活动</Text>
                 <Text style={styles.selectorValue} numberOfLines={1}>
                   {selectedActivity ? selectedActivity.name : loadingActivities ? '加载中…' : '请选择活动'}
                 </Text>
@@ -421,6 +505,7 @@ export default function StaffSignScreen() {
                   key={item.key}
                   style={[styles.modeBtn, active && styles.modeBtnActive]}
                   onPress={() => setMode(item.key)}
+                  disabled={busy}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.modeText, active && styles.modeTextActive]}>{item.label}</Text>
@@ -430,91 +515,183 @@ export default function StaffSignScreen() {
           </View>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={openScanner} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={openScanner} disabled={busy} activeOpacity={0.85}>
               <Ionicons name="qr-code-outline" size={20} color="white" />
               <Text style={styles.primaryBtnText}>扫码{ mode === 'out' ? '签退' : '签到'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={pickFromGallery} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={pickFromGallery} disabled={busy} activeOpacity={0.85}>
               <Ionicons name="image-outline" size={20} color="#2ecc71" />
-              <Text style={styles.secondaryBtnText}>相册识别</Text>
+              <Text style={styles.secondaryBtnText}>从相册选择</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.hint}>
-            扫码支持摄像头与相册截图；二维码有效期 30 秒。
+            扫码支持摄像头与相册截图；二维码有效期 10 秒。
           </Text>
+        </View>
+
+        {/* 个人信息 */}
+        <View style={styles.card}>
+          <GlassFill radius={22} />
+          <Text style={styles.cardTitle}>导出我的信息</Text>
+          <Text style={styles.hint}>生成个人信息 JSON，复制后发给签到方即可。</Text>
+          <TouchableOpacity style={[styles.secondaryBtn, styles.exportButton]} onPress={handleExport} disabled={!currentUser} activeOpacity={0.8}>
+            <Ionicons name="code-slash-outline" size={18} color="#0f8f58" />
+            <Text style={styles.secondaryBtnText}>{exportText ? '重新生成 JSON' : '生成我的 JSON'}</Text>
+          </TouchableOpacity>
+          {exportText ? (
+            <View>
+              <ScrollView style={styles.codeBox} nestedScrollEnabled>
+                <Text selectable style={styles.codeText}>{exportText}</Text>
+              </ScrollView>
+              <TouchableOpacity style={[styles.primaryBtn, styles.exportButton]} onPress={handleCopy} activeOpacity={0.8}>
+                <Ionicons name={copied ? 'checkmark-outline' : 'copy-outline'} size={18} color="white" />
+                <Text style={styles.primaryBtnText}>{copied ? '已复制到剪贴板' : '复制 JSON'}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
 
         {/* 用户库 */}
         <View style={styles.card}>
           <GlassFill radius={22} />
           <View style={styles.bookHeader}>
-            <Text style={styles.cardTitle}>用户库 · {book.length}</Text>
-            <TouchableOpacity style={styles.smallBtn} onPress={handleExport} activeOpacity={0.8}>
-              <Ionicons name="share-outline" size={15} color="#2ecc71" />
-              <Text style={styles.smallBtnText}>导出</Text>
+            <TouchableOpacity
+              style={styles.bookToggle}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: bookExpanded }}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setBookExpanded((value) => !value);
+              }}
+            >
+              <Text style={styles.cardTitle}>用户库 · {book.length}</Text>
+              <Ionicons name={bookExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#92a2a9" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.smallBtn} disabled={busy} onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setBookExpanded(true);
+              setBatchMode((value) => !value);
+              setSelectedIds(new Set());
+            }}>
+              <Text style={styles.smallBtnText}>{batchMode ? '取消多选' : '批量选择'}</Text>
             </TouchableOpacity>
           </View>
-
           <View style={styles.importRow}>
-            <TouchableOpacity style={styles.importBtn} onPress={handleImportFile} activeOpacity={0.8}>
-              <Ionicons name="document-text-outline" size={16} color="#3498db" />
-              <Text style={styles.importText}>导入 JSON 文件</Text>
+            <TouchableOpacity style={styles.importBtn} onPress={handleClipboardImport} disabled={busy} activeOpacity={0.8}>
+              <Ionicons name="clipboard-outline" size={18} color="#0f8f58" />
+              <Text style={styles.importText}>导入用户</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.importBtn} onPress={handleClipboardImport} activeOpacity={0.8}>
-              <Ionicons name="clipboard-outline" size={16} color="#9b59b6" />
-              <Text style={styles.importText}>从剪贴板导入</Text>
+            <TouchableOpacity style={styles.importBtn} disabled={!book.length || busy} onPress={() => {
+              setBookExportText(JSON.stringify(buildExportPayload(book), null, 2));
+              setBookCopied(false);
+            }} activeOpacity={0.8}>
+              <Ionicons name="copy-outline" size={18} color="#0f8f58" />
+              <Text style={styles.importText}>导出用户库</Text>
             </TouchableOpacity>
           </View>
-
-          {currentUser ? (
-            <TouchableOpacity style={styles.selfRow} onPress={handleAddSelf} activeOpacity={0.8}>
-              <Ionicons name="person-add-outline" size={16} color="#e67e22" />
-              <Text style={styles.selfText}>
-                把当前账号（{currentUser.realname || currentUser.username}）加入用户库
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {book.length === 0 ? (
-            <Text style={styles.emptyText}>
-              还没有用户。让对方在「我的 → 导出我的信息」分享 JSON，然后在这里导入。
-            </Text>
-          ) : (
-            book.map((user) => (
-              <View key={user.id} style={styles.userRow}>
-                <TouchableOpacity
-                  style={styles.userMain}
-                  onPress={() => setQrUser(user)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {(user.realname || user.username || '?').slice(0, 1)}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.userName}>
-                      {user.realname || '未填写姓名'}
-                    </Text>
-                    <Text style={styles.userSub}>
-                      {user.username ? `学号 ${user.username}` : '无学号'} · ID {user.id}
-                    </Text>
-                  </View>
-                  <Ionicons name="qr-code-outline" size={18} color="#2ecc71" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(user)}>
-                  <Ionicons name="trash-outline" size={16} color="#e74c3c" />
-                </TouchableOpacity>
+          {bookExpanded ? (
+            <View>
+              <View style={styles.bookSearch}>
+                <Ionicons name="search-outline" size={18} color="#92a2a9" />
+                <TextInput style={styles.bookSearchInput} value={query} onChangeText={setQuery} placeholder="搜索姓名、学号或 UID" placeholderTextColor="#92a2a9" autoCorrect={false} autoCapitalize="none" />
               </View>
-            ))
-          )}
+              {batchMode ? (
+                <View style={styles.batchBar}>
+                  <TouchableOpacity disabled={busy || !filteredBook.length} onPress={() => setSelectedIds((previous) => {
+                    const next = new Set(previous);
+                    const allSelected = filteredBook.every((user) => next.has(user.id));
+                    filteredBook.forEach((user) => { if (allSelected) next.delete(user.id); else next.add(user.id); });
+                    return next;
+                  })}>
+                    <Text style={styles.smallBtnText}>全选当前结果</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.hint}>已选 {selectedIds.size} 人</Text>
+                </View>
+              ) : null}
+              {currentUser ? (
+                <TouchableOpacity style={styles.selfRow} onPress={handleAddSelf} disabled={busy} activeOpacity={0.8}>
+                  <Ionicons name="person-add-outline" size={16} color="#e67e22" />
+                  <Text style={styles.selfText}>将当前账号加入用户库</Text>
+                </TouchableOpacity>
+              ) : null}
+              {book.length === 0 ? (
+                <Text style={styles.emptyText}>让对方复制个人信息 JSON，点击「导入用户」保存到这里。</Text>
+              ) : filteredBook.length === 0 ? <Text style={styles.emptyText}>没有找到匹配的用户</Text> : filteredBook.map((user) => (
+                <View key={user.id} style={styles.userRow}>
+                  <TouchableOpacity style={styles.userMain} onPress={() => toggleUser(user)} disabled={busy} activeOpacity={0.7}>
+                    {batchMode ? <Ionicons name={selectedIds.has(user.id) ? 'checkbox' : 'square-outline'} size={22} color="#0f8f58" style={{ marginRight: 10 }} /> : null}
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{(user.realname || user.username || '?').slice(0, 1)}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.userName}>{user.realname || '未填写姓名'}</Text>
+                      <Text style={styles.userSub}>{user.username ? `学号 ${user.username}` : '无学号'} · UID {user.id}</Text>
+                    </View>
+                    {!batchMode ? <Ionicons name="qr-code-outline" size={18} color="#0f8f58" /> : null}
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemove(user)} disabled={busy} accessibilityLabel="移除用户">
+                    <Ionicons name="trash-outline" size={16} color="#e74c3c" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {batchMode ? (
+                <TouchableOpacity style={[styles.primaryBtn, styles.exportButton, (!selectedIds.size || busy) && { opacity: 0.5 }]} disabled={!selectedIds.size || busy} onPress={confirmBatch} activeOpacity={0.8}>
+                  {busy ? <ActivityIndicator color="white" /> : null}
+                  <Text style={styles.primaryBtnText}>{batchProgress ? `处理中 ${batchProgress.done}/${batchProgress.total}` : `批量${mode === 'out' ? '签退' : '签到'} · ${selectedIds.size} 人`}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         <Text style={styles.footerHint}>
           选择已保存的用户后，可为其签到或签退。操作结果以服务端返回为准。
         </Text>
       </ScrollView>
+
+      <Modal visible={!!batchResults} transparent animationType="fade" onRequestClose={() => setBatchResults(null)}>
+        <Pressable style={styles.modalMask} onPress={() => setBatchResults(null)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>批量{batchResults?.mode === 'out' ? '签退' : '签到'}结果</Text>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {[true, false].map((success) => {
+                const entries = batchResults?.results.filter((entry) => entry.success === success) || [];
+                return (
+                  <View key={String(success)}>
+                    <Text style={[styles.resultHeading, { color: success ? '#0f8f58' : '#c0392b' }]}>{success ? '成功' : '失败'} · {entries.length} 人</Text>
+                    {entries.map(({ user, message }) => (
+                      <View key={user.id} style={styles.resultRow}>
+                        <Text style={styles.userName}>{user.realname || user.username || user.id}</Text>
+                        <Text style={styles.userSub}>{user.username} · UID {user.id}</Text>
+                        {!success ? <Text style={styles.resultError}>{message}</Text> : null}
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setBatchResults(null)}><Text style={styles.closeBtnText}>完成</Text></TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={!!bookExportText} transparent animationType="fade" onRequestClose={() => setBookExportText('')}>
+        <Pressable style={styles.modalMask} onPress={() => setBookExportText('')}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>导出用户库 JSON</Text>
+            <ScrollView style={styles.codeBox}><Text selectable style={styles.codeText}>{bookExportText}</Text></ScrollView>
+            <TouchableOpacity style={[styles.primaryBtn, styles.exportButton]} onPress={async () => {
+              try {
+                if (!await Clipboard.setStringAsync(bookExportText)) throw new Error('剪贴板写入失败');
+                setBookCopied(true);
+              } catch (error) { Alert.alert('复制失败', error.message); }
+            }}><Text style={styles.primaryBtnText}>{bookCopied ? '已复制到剪贴板' : '复制 JSON'}</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setBookExportText('')}><Text style={styles.closeBtnText}>关闭</Text></TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* 活动选择 */}
       <Modal visible={activityPicker} transparent animationType="fade" onRequestClose={() => setActivityPicker(false)}>
@@ -666,7 +843,7 @@ export default function StaffSignScreen() {
       </Modal>
 
       {/* 摄像头扫码 */}
-      <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
+      <Modal visible={scanning} statusBarTranslucent animationType="slide" onRequestClose={() => setScanning(false)}>
         <View style={styles.cameraContainer}>
           <CameraView
             style={StyleSheet.absoluteFill}
@@ -674,14 +851,16 @@ export default function StaffSignScreen() {
             barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
             onBarcodeScanned={handleBarcode}
           />
-          <View style={styles.scanOverlay}>
+          <View style={styles.scanOverlay} pointerEvents="none">
             <View style={styles.scanFrame} />
             <Text style={styles.scanTip}>
               对准对方的身份码 · 当前{mode === 'out' ? '签退' : '签到'}
             </Text>
           </View>
           <TouchableOpacity
-            style={[styles.scanClose, { top: insets.top + 16 }]}
+            style={[styles.scanClose, { top: insets.top + 16, left: insets.left + 16 }]}
+            accessibilityLabel="关闭扫码"
+            accessibilityRole="button"
             onPress={() => setScanning(false)}
           >
             <Ionicons name="close" size={26} color="white" />
@@ -750,6 +929,16 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: '#27ae60', fontSize: 15, fontWeight: '800' },
   hint: { marginTop: 10, fontSize: 11, color: '#92a2a9', lineHeight: 17 },
+  exportButton: { marginTop: 14, flex: 0, paddingVertical: 13 },
+  bookSearch: { marginTop: 16, flexDirection: 'row', alignItems: 'center', borderRadius: 14, backgroundColor: '#f4f8f7', paddingHorizontal: 12 },
+  bookSearchInput: { flex: 1, paddingVertical: 13, paddingHorizontal: 8, color: '#20323a', fontSize: 14 },
+  batchBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 10 },
+  resultHeading: { fontSize: 15, fontWeight: '700', marginTop: 12 },
+  resultRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eef3f1' },
+  resultError: { color: '#c0392b', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  codeBox: { maxHeight: 200, marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#f4f8f7' },
+  codeText: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12, lineHeight: 19, color: '#34495e' },
+  bookToggle: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
   bookHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   smallBtn: {
     flexDirection: 'row',
@@ -882,10 +1071,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(46,204,113,0.9)',
     backgroundColor: 'transparent',
   },
-  scanTip: { color: 'white', fontSize: 14, marginTop: 22, fontWeight: '600' },
+  scanTip: { position: 'absolute', top: '50%', left: 24, right: 24, marginTop: 147, color: 'white', fontSize: 14, fontWeight: '600', textAlign: 'center' },
   scanClose: {
     position: 'absolute',
-    right: 18,
+    left: 16,
     width: 44,
     height: 44,
     borderRadius: 22,

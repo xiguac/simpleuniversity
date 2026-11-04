@@ -1,15 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { buildPuHeaders } from '../api/puApi';
-import { ActivityIndicator, Alert, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
+import { ActivityIndicator, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import GlassFill, { nativeGlass } from '../ui/GlassFill';
-import { buildExportPayload, normalizeUser } from '../utils/userBook';
-import { shareUsers } from '../utils/exportUsers';
 
 const IMAGE_HEADERS = {
   Referer: 'https://class.pocketuni.net/',
@@ -136,60 +133,8 @@ export default function ProfileScreen() {
               <Ionicons name="qr-code-outline" size={20} color="#e67e22" />
             </View>
             <View>
-              <Text style={styles.listCardText}>签到员</Text>
-              <Text style={styles.listCardSub}>扫码签到 / 签退 · 代签到</Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#ccc" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.listCard}
-          activeOpacity={0.7}
-          onPress={async () => {
-            const me = normalizeUser(userInfo);
-            if (!me) {
-              return;
-            }
-            try {
-              Alert.alert('导出我的信息', '选择复制 JSON 或分享 JSON 文件', [
-                {
-                  text: '复制 JSON',
-                  onPress: async () => {
-                    try {
-                      const copied = await Clipboard.setStringAsync(JSON.stringify(buildExportPayload([me]), null, 2));
-                      if (!copied) throw new Error('剪贴板写入失败');
-                      Alert.alert('已复制', '可交给签到员粘贴导入');
-                    } catch (error) {
-                      Alert.alert('复制失败', error.message);
-                    }
-                  },
-                },
-                {
-                  text: '分享文件',
-                  onPress: async () => {
-                    try {
-                      await shareUsers([me]);
-                    } catch (error) {
-                      Alert.alert('导出失败', error.message);
-                    }
-                  },
-                },
-                { text: '取消', style: 'cancel' },
-              ]);
-            } catch (error) {
-              Alert.alert('导出失败', error.message);
-            }
-          }}
-        >
-          <GlassFill radius={20} />
-          <View style={styles.listLeft}>
-            <View style={[styles.listIconBg, { backgroundColor: '#eef8ff' }]}>
-              <Ionicons name="share-outline" size={20} color="#3498db" />
-            </View>
-            <View>
-              <Text style={styles.listCardText}>导出我的信息</Text>
-              <Text style={styles.listCardSub}>生成 JSON，供签到员导入代签到</Text>
+              <Text style={styles.listCardText}>签到/签退</Text>
+              <Text style={styles.listCardSub}>扫码、相册识别与用户库</Text>
             </View>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#ccc" />

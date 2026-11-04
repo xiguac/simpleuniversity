@@ -24,8 +24,8 @@ function TribeCard({ item, navigation }) {
         <GlassFill radius={18} />
         <UniversalImage uri={item.logo} style={styles.logo} />
         <View style={styles.info}>
-          <Text style={styles.name}>{item.name}</Text>
-          <Text style={styles.type}>{item.typeName} / {item.org}</Text>
+          <Text style={styles.name} numberOfLines={2}>{item.name}</Text>
+          <Text style={styles.type} numberOfLines={2}>{item.typeName} / {item.org}</Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color="#ccc" />
       </Pressable>
@@ -86,8 +86,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f4f7f6' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   card: { marginHorizontal: 15, marginTop: 15 },
-  cardInner: { flexDirection: 'row', backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', padding: 15, borderRadius: 18, alignItems: 'center', elevation: 2 },
-  logo: { width: 55, height: 55, borderRadius: 12, backgroundColor: '#f0f0f0' },
+  cardInner: { flexDirection: 'row', backgroundColor: nativeGlass ? 'rgba(255,255,255,0.45)' : 'white', padding: 15, borderRadius: 18, alignItems: 'center', elevation: Platform.OS === 'android' ? 0 : 2, borderWidth: 1, borderColor: '#edf1ef', overflow: 'hidden' },
+  logo: { width: 55, height: 55, flexShrink: 0, borderRadius: 12, backgroundColor: '#f0f0f0' },
   info: { flex: 1, marginLeft: 15 },
   name: { fontSize: 16, fontWeight: 'bold', color: '#2c3e50' },
   type: { color: '#95a5a6', fontSize: 12, marginTop: 4 },
