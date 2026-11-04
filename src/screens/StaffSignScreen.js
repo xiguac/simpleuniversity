@@ -34,11 +34,12 @@ import {
   staffSign,
 } from '../api/puExtra';
 import {
-  loadUserBook,
+  loadUserBookData,
+  saveUserGroups,
   buildExportPayload,
   mergeUserBook,
   normalizeUser,
-  parseUserJson,
+  parseUserBookJson,
   removeUserFromBook,
 } from '../utils/userBook';
 
@@ -69,6 +70,12 @@ export default function StaffSignScreen() {
 
   const [mode, setMode] = useState('in');
   const [book, setBook] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [groupName, setGroupName] = useState('');
+  const [groupMembers, setGroupMembers] = useState(() => new Set());
+  const [savingGroup, setSavingGroup] = useState(false);
   const [bookExpanded, setBookExpanded] = useState(false);
   const [exportText, setExportText] = useState('');
   const [copied, setCopied] = useState(false);
@@ -184,7 +191,7 @@ export default function StaffSignScreen() {
 
   // 用户库
   useEffect(() => {
-    loadUserBook().then(setBook).catch((error) => Alert.alert('读取用户库失败', error.message));
+    loadUserBookData().then(({ users, groups: savedGroups }) => { setBook(users); setGroups(savedGroups); }).catch((error) => Alert.alert('读取用户库失败', error.message));
   }, []);
 
   // 可签到活动
@@ -364,15 +371,16 @@ export default function StaffSignScreen() {
     }
   }, [handleScannedText]);
 
-  const confirmImport = useCallback((users) => {
+  const confirmImport = useCallback(({ users, groups: importedGroups }) => {
     const names = users.map((user) => user.realname || user.username || `UID ${user.id}`).join('、');
-    Alert.alert('确认导入用户', `是否为用户 ${names}？\n确认后保存到本地用户库。`, [
+    Alert.alert('确认导入用户', `${users.length ? `是否为用户 ${names}？` : '是否导入这些空分组？'}\n确认后保存到本地用户库（含 ${importedGroups.length} 个分组）。`, [
       { text: '取消', style: 'cancel' },
       {
         text: '确认导入',
         onPress: async () => {
           try {
-            const merged = await mergeUserBook(users);
+            const merged = await mergeUserBook(users, importedGroups);
+            setGroups((await loadUserBookData()).groups);
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setBook(merged);
             setBookExpanded(true);
@@ -389,7 +397,7 @@ export default function StaffSignScreen() {
 
   const handlePasteImport = useCallback(async () => {
     try {
-      const users = parseUserJson(pasteText);
+      const users = parseUserBookJson(pasteText);
       confirmImport(users);
     } catch (error) {
       Alert.alert('导入失败', error?.message || 'JSON 格式不正确');
@@ -401,7 +409,7 @@ export default function StaffSignScreen() {
       const text = await Clipboard.getStringAsync();
       let users;
       try {
-        users = parseUserJson(text);
+        users = parseUserBookJson(text);
       } catch (error) {
         setPasteText('');
         setPasteOpen(true);
@@ -436,6 +444,7 @@ export default function StaffSignScreen() {
           try {
             const next = await removeUserFromBook(user.id);
             setBook(next);
+            setGroups((await loadUserBookData()).groups);
             setSelectedIds((previous) => {
               const selected = new Set(previous);
               selected.delete(user.id);
@@ -448,6 +457,42 @@ export default function StaffSignScreen() {
       },
     ]);
   }, []);
+
+  const openGroupEditor = (group = null) => {
+    setEditingGroup(group ? group.name : '');
+    setGroupName(group?.name || '');
+    setGroupMembers(new Set(group?.userIds || []));
+  };
+
+  const persistGroups = async (next) => {
+    setSavingGroup(true);
+    try {
+      setGroups(await saveUserGroups(next));
+      setEditingGroup(null);
+    } catch (error) {
+      Alert.alert('保存分组失败', error.message);
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  const handleSaveGroup = () => {
+    const name = groupName.trim();
+    if (!name) { Alert.alert('提示', '请输入分组名称'); return; }
+    if (groups.some((group) => group.name === name && group.name !== editingGroup)) {
+      Alert.alert('提示', '分组名称已存在');
+      return;
+    }
+    const group = { name, userIds: Array.from(groupMembers) };
+    return persistGroups(editingGroup === '' ? [...groups, group] : groups.map((item) => item.name === editingGroup ? group : item));
+  };
+
+  const handleDeleteGroup = (group) => {
+    Alert.alert('删除分组', `确定删除「${group.name}」？组内用户会保留在用户库中。`, [
+      { text: '取消', style: 'cancel' },
+      { text: '删除', style: 'destructive', onPress: () => persistGroups(groups.filter((item) => item.name !== group.name)) },
+    ]);
+  };
 
   const handleExport = useCallback(() => {
     if (!currentUser) return;
@@ -583,14 +628,18 @@ export default function StaffSignScreen() {
               <Ionicons name="clipboard-outline" size={18} color="#0f8f58" />
               <Text style={styles.importText}>导入用户</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.importBtn} disabled={!book.length || busy} onPress={() => {
-              setBookExportText(JSON.stringify(buildExportPayload(book), null, 2));
+            <TouchableOpacity style={styles.importBtn} disabled={(!book.length && !groups.length) || busy} onPress={() => {
+              setBookExportText(JSON.stringify(buildExportPayload(book, groups), null, 2));
               setBookCopied(false);
             }} activeOpacity={0.8}>
               <Ionicons name="copy-outline" size={18} color="#0f8f58" />
               <Text style={styles.importText}>导出用户库</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity style={styles.selfRow} disabled={busy} onPress={() => { setEditingGroup(null); setGroupsOpen(true); }}>
+            <Ionicons name="people-outline" size={18} color="#0f8f58" />
+            <Text style={styles.importText}>管理分组 · {groups.length}</Text>
+          </TouchableOpacity>
           {bookExpanded ? (
             <View>
               <View style={styles.bookSearch}>
@@ -628,6 +677,7 @@ export default function StaffSignScreen() {
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={styles.userName}>{user.realname || '未填写姓名'}</Text>
                       <Text style={styles.userSub}>{user.username ? `学号 ${user.username}` : '无学号'} · UID {user.id}</Text>
+                      {groups.some((group) => group.userIds.includes(user.id)) ? <Text style={styles.hint}>{groups.filter((group) => group.userIds.includes(user.id)).map((group) => group.name).join(' · ')}</Text> : null}
                     </View>
                     {!batchMode ? <Ionicons name="qr-code-outline" size={18} color="#0f8f58" /> : null}
                   </TouchableOpacity>
@@ -650,6 +700,42 @@ export default function StaffSignScreen() {
           选择已保存的用户后，可为其签到或签退。操作结果以服务端返回为准。
         </Text>
       </ScrollView>
+
+      <Modal visible={groupsOpen} transparent animationType="fade" onRequestClose={() => { if (!savingGroup) setGroupsOpen(false); }}>
+        <View style={styles.modalMask}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>{editingGroup === null ? '管理分组' : editingGroup === '' ? '新增分组' : '编辑分组'}</Text>
+            {editingGroup === null ? <>
+              <TouchableOpacity style={[styles.importBtn, { flex: 0 }]} disabled={savingGroup} onPress={() => openGroupEditor()}><Text style={styles.importText}>新增分组</Text></TouchableOpacity>
+              <ScrollView style={{ maxHeight: 360 }}>
+                {!groups.length ? <Text style={styles.emptyText}>还没有分组，新增后可勾选用户库成员。</Text> : null}
+                {groups.map((group) => <View key={group.name} style={styles.userRow}>
+                  <TouchableOpacity style={styles.userMain} disabled={savingGroup} onPress={() => openGroupEditor(group)}>
+                    <View style={{ flex: 1 }}><Text style={styles.userName}>{group.name}</Text><Text style={styles.userSub}>{group.userIds.length} 位成员 · 点击编辑</Text></View>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.removeBtn} accessibilityLabel={`删除分组 ${group.name}`} disabled={savingGroup} onPress={() => handleDeleteGroup(group)}><Ionicons name="trash-outline" size={18} color="#e74c3c" /></TouchableOpacity>
+                </View>)}
+              </ScrollView>
+            </> : <>
+              <TextInput style={[styles.bookSearch, { paddingVertical: 13, color: '#20323a' }]} value={groupName} onChangeText={setGroupName} editable={!savingGroup} placeholder="分组名称" accessibilityLabel="分组名称" />
+              <Text style={styles.hint}>选择成员 · 已选 {groupMembers.size} 人（用户可属于多个分组）</Text>
+              <ScrollView style={{ maxHeight: 300 }} keyboardShouldPersistTaps="handled">
+                {!book.length ? <Text style={styles.emptyText}>请先将用户导入用户库</Text> : null}
+                {book.map((user) => <TouchableOpacity key={user.id} style={styles.userRow} disabled={savingGroup} accessibilityRole="checkbox" accessibilityState={{ checked: groupMembers.has(user.id) }} onPress={() => setGroupMembers((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(user.id)) next.delete(user.id); else next.add(user.id);
+                  return next;
+                })}>
+                  <Ionicons name={groupMembers.has(user.id) ? 'checkbox' : 'square-outline'} size={22} color="#0f8f58" />
+                  <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.userName}>{user.realname || user.username || user.id}</Text><Text style={styles.userSub}>{user.username} · UID {user.id}</Text></View>
+                </TouchableOpacity>)}
+              </ScrollView>
+              <TouchableOpacity style={[styles.primaryBtn, styles.exportButton]} disabled={savingGroup} onPress={handleSaveGroup}><Text style={styles.primaryBtnText}>{savingGroup ? '保存中…' : '保存分组'}</Text></TouchableOpacity>
+            </>}
+            <TouchableOpacity style={styles.closeBtn} disabled={savingGroup} onPress={() => editingGroup === null ? setGroupsOpen(false) : setEditingGroup(null)}><Text style={styles.closeBtnText}>{editingGroup === null ? '关闭' : '返回分组列表'}</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={!!batchResults} transparent animationType="fade" onRequestClose={() => setBatchResults(null)}>
         <Pressable style={styles.modalMask} onPress={() => setBatchResults(null)}>
@@ -1062,7 +1148,7 @@ const styles = StyleSheet.create({
   },
   pasteOkText: { color: 'white', fontSize: 14, fontWeight: '800' },
   cameraContainer: { flex: 1, backgroundColor: '#000' },
-  scanOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  scanOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' },
   scanFrame: {
     width: 250,
     height: 250,
